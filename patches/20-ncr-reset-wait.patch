@@ -1,0 +1,14 @@
+# IBM's NCR driver (DD_SCSI0/DD_SCSI1 are the same 53C810 driver), in
+# ncr_chip_reset_bus.  After pulsing SCSI RST/ it reads SIST0 once and then
+# loops, up to 100,000 times with calibrated delays, re-reading ISTAT,
+# SIST0, SIST1 and DSTAT until any of them shows something.  On the Network
+# Server's 53C825A, ISTAT's SIP drops as soon as SIST0 is read (NT's
+# miniport depends on that), so nothing ever shows.  The boot then sits in
+# that loop for tens of billions of emulated instructions.  Run the loop
+# body once: the back-branch at ncr_chip_reset_bus+0x4ec
+# (bt lt, ncr_chip_reset_bus+0x288) becomes a nop.  Little-endian
+# instruction bytes.
+file /MK/DD_SCSI0.DYN
+patch-sym ncr_chip_reset_bus+0x4ec 9cfd8041 00000060
+file /MK/DD_SCSI1.DYN
+patch-sym ncr_chip_reset_bus+0x4ec 9cfd8041 00000060

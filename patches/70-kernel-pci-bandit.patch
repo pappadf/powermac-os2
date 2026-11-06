@@ -1,0 +1,13 @@
+# The Microkernel's PCI configuration access on Bandit 1's own ports instead
+# of PC configuration mechanism #1 ($CF8/$CFC), which no Mac has.
+#
+# - grow-segment takes most of the zero padding between .rodata and .got into
+#   the loaded text: the kernel's code cave (src/kernel-cave.h, which also
+#   says why it stops short of .got).
+# - kernel-bat1.S maps Bandit 1 and Grand Central through the BAT the 604
+#   kernel leaves unused, and keeps the kernel's VM map below that window.
+# - kernel-pci.c replaces the eight pci_* accessors.
+file /MK/MK_TEST.PPC
+grow-segment 0 0x6ED00
+asm src/kernel-bat1.S 4e8d34a5501b
+asm src/kernel-pci.c 3e4fe82cb985
