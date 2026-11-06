@@ -23,7 +23,7 @@ $(B)/ldrsvc.bin: $(B)/ldrsvc.elf
 	$(OBJCOPY) -O binary $< $@
 $(B)/ldrsvc_blob.o: ldrsvc_blob.S $(B)/ldrsvc.bin
 	$(CLANG) $(TARGET) -c -DBLOB=\"$(B)/ldrsvc.bin\" $< -o $@
-$(B)/shim.o: shim.c residual.h pnp.h ../patches/src/loader-svc.h | $(B)
+$(B)/shim.o: shim.c prep-residual.h ../patches/src/loader-svc.h | $(B)
 	$(CLANG) $(CFLAGS) -c $< -o $@
 $(B)/shim.elf: $(B)/start.o $(B)/shim.o $(B)/ldrsvc_blob.o shim.ld
 	$(LLD) -T shim.ld -static -nostdlib -o $@ $(B)/start.o $(B)/shim.o $(B)/ldrsvc_blob.o

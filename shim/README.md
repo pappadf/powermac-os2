@@ -95,5 +95,6 @@ native.
 - `ldrsvc.c`, `ldrsvc.ld`, `ldrsvc_blob.S`: the loader service, linked at
   `$40000` and embedded in the shim.
 - `os2boot.of`, `mkfloppy.sh`: the floppy.
-- `residual.h`, `pnp.h`: NetBSD's PReP headers (BSD licence), with
-  `unsigned long` narrowed to `uint32_t`.
+- `prep-residual.h`: the layout of PReP's residual data, as much as the shim
+  fills, written for this project from the PReP specification's layout, with
+  every offset the loader reads checked at compile time.

@@ -33,7 +33,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "residual.h"
+#include "prep-residual.h"
 #include "../patches/src/loader-svc.h"
 
 // The boot device: the first SCSI ID on the first fast/wide bus whose

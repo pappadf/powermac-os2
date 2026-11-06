@@ -128,8 +128,7 @@ PReP device. The patch file format and the code-patching tool are covered in
 
 ## License
 
-GPL-2.0; see [LICENSE](LICENSE). `shim/residual.h` and `shim/pnp.h` are
-PReP data-structure definitions from NetBSD.
+GPL-2.0; see [LICENSE](LICENSE).
 
 The repository contains no IBM code. You supply your own CD image, and the
 patched image you build is for your own use.
