@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
 # mkfloppy.sh SHIM.EXE os2boot.of out.img -- a FAT12 1.44 MB floppy with SHIM.EXE
 # and OS2BOOT.OF, the script told which sectors SHIM.EXE occupies (it is read
 # with read-blocks, as the NT boot floppy reads its veneer).

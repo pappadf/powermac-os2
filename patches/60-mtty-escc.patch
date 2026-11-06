@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # The Micro-Console server's serial console on the Network Server's own
 # serial port (ESCC channel A in Grand Central, Open Firmware's ttya) instead
 # of a PC 16550 at $3F8, which no Mac has.  The new UART layer is assembled

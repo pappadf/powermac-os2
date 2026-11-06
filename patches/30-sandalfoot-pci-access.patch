@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # Give the Sandalfoot (planar ID $FE, the identity the shim's residual data gives the machine)
 # PCI configuration mechanism #1, as every other planar OS/2 supports with
 # PCI video already has (Polo, Woodfield, ...).  OS/2's video server walks

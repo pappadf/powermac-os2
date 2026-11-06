@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # OS/2's video server matches a PCI display adapter against the hardware
 # database by ID, and gets the database object's ID with
 # get_id() -> string_to_hex(the first 8 characters of its name).  The

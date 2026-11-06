@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # The PC devices the Microkernel still reaches through PReP's I/O window --
 # its clock, NVRAM, DMA controller, timer, PMC, IBM's L2-cache register --
 # answered without the window (src/kernel-legacy.c): an MC146818 clock running

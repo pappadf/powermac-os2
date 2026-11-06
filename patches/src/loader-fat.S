@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* loader-fat.S -- the disk's boot loader (FAT_BL.HD) on the Network Server's
  * hardware.
  *

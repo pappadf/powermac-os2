@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # The boot configuration the installer copies to the hard disk (BOOT.CFG,
 # the hard disk loader's default) is set up for the IDE Carolina
 # (6050/6070), not the SCSI Sandalfoot the shim presents.  Two

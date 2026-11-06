@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* kernel-iomap.S -- PReP's linear I/O windows, mapped onto the Network Server's.
  *
  * OS/2's drivers ask for device registers by PReP physical address (LIBDDPIO's

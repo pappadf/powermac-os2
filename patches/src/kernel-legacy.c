@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* kernel-legacy.c -- the PC devices the Microkernel still talks to, on a Mac.
  *
  * Every PC port the kernel touches goes through six functions (inb, outb, inw,

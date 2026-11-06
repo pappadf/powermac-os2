@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # The 8042 keyboard controller OS/2's console driver drives, emulated on the
 # Network Server's ADB keyboard and mouse through Cuda (src/kernel-adb.c).
 # The configuration trap (patch 97) hands it ports $60/$64; patch 80 routes

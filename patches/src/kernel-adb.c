@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* kernel-adb.c -- the PC keyboard controller OS/2 drives, on the Network
  * Server's ADB keyboard and mouse.
  *

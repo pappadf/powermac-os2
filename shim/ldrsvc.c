@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ldrsvc.c -- the loader service: IBM's boot loader's PReP hardware, on the
 // Network Server's own.
 //

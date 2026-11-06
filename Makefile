@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # powermac-os2 -- OS/2 Warp (PowerPC Edition) on the Apple Network Server.
 #
 #   make ISO=/path/to/os2-ppc-cd1.iso    the patched CD and the boot floppy

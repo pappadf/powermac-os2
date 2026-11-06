@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* kernel-cave.h -- what the patches put in MK_TEST.PPC's text cave, and where.
  *
  * Segment 0 of the Microkernel ends at $F016DA7D (.rodata); .got starts at

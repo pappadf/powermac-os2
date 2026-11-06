@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 """Patch an ELF file on the CD with newly assembled or compiled code.
 
     asm SOURCE [SHA]          (a remaster.py operation, after a `file` line)

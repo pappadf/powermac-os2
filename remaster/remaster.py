@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-only
 """Re-master the OS/2 Warp (PowerPC Edition) CD with patches.
 
     remaster.py IN.iso OUT.iso PATCHFILE...

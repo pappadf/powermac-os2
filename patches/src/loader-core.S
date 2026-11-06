@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* loader-core.S -- BL_AUTO's core on the Network Server's hardware.
  * The core runs at file offset + $D44B4 (d6000-e45ff); see loader-svc.h.
  */

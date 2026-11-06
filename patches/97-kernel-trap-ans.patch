@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # PReP's spread ISA ports and direct-mapped PCI configuration, which no page
 # mapping can express, emulated: every mapping of them points at a window of
 # unclaimed Bandit memory whose pages are mapped no-access, and the

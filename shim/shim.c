@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // os2shim -- boot OS/2 Warp (PowerPC Edition) from Open Firmware on an Apple
 // Network Server, without PReP firmware and without a lane-reversing bridge.

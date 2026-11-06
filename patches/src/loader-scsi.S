@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* loader-scsi.S -- BL_AUTO's SCSI module on the Network Server's hardware.
  * The module runs at file offset + $ACE3C (cc000-cdfff in memory); see
  * loader-svc.h for the service it calls.

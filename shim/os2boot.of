@@ -1,3 +1,4 @@
+\ SPDX-License-Identifier: GPL-2.0-only
 \ os2shim -- boot OS/2 Warp (PowerPC Edition) on an Apple Network Server 500/700
 \
 \ Once per machine, little-endian mode (the same settings Windows NT uses):

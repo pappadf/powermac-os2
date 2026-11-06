@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* kernel-ints.c -- the Microkernel's interrupt controller: Grand Central.
  *
  * The kernel was written for two cascaded 8259s.  It keeps an 8259-style

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* kernel-bat1.S -- give the Microkernel a mapping of the Network Server's I/O.
  *
  * On a 604 the kernel's _start loads BAT0 (itself), BAT2 (PReP's ISA I/O,

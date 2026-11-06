@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* The loader service's image (ldrsvc.c, linked at LDRSVC), for the shim to copy. */
     .section .rodata
     .balign 4

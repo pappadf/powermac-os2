@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # A Macintosh has no PC parallel port.  On the Network Server, initldev's
 # parallel loadable device (libldpar.so) probes ports $3BC-$3BE, finds
 # nothing, and then blocks for good in LD_InitPhysical, right after

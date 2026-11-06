@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* loader-svc.h -- the loader service the shim installs for IBM's boot loader.
  *
  * BL_AUTO, the IBM Microkernel Bootloader, drives PReP hardware: PC ports

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* mtty-escc.S -- MTTY.DYN's serial console on the Network Server's own port.
  *
  * MTTY.DYN, the Micro-Console server, drives a PC 16550 at ISA port $3F8.

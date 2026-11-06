@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* The loader service (ldrsvc.c): one block at LDRSVC, its branch table first. */
 SECTIONS {
     . = 0x40000;

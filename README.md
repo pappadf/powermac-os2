@@ -128,7 +128,8 @@ PReP device. The patch file format and the code-patching tool are covered in
 
 ## License
 
-GPL-2.0; see [LICENSE](LICENSE).
+GPL-2.0-only; see [LICENSE](LICENSE). Every source file carries an
+`SPDX-License-Identifier: GPL-2.0-only` header.
 
 The repository contains no IBM code. You supply your own CD image, and the
 patched image you build is for your own use.

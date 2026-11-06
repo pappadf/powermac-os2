@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* kernel-pci.c -- the Microkernel's PCI configuration access, through Bandit.
  *
  * The kernel's accessors take a configuration-mechanism-#1 address,

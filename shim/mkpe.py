@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-only
 """mkpe.py flat.bin out.exe [image_base] -- wrap a flat little-endian PowerPC image in the
 bare PE shape Open Firmware's pe-loader takes (the NT veneer's): a COFF file header at
 offset 0 (machine $01F0, no MS-DOS stub), a PE32 optional header, ONE section at RVA 0

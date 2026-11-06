@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-only
  * os2shim -- start.S: entry from Open Firmware's pe-loader, and the hand-off.
  *
  * Entered at ImageBase + 0 by `go`, in Open Firmware's little-endian mode,

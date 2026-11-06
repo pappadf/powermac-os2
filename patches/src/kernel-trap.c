@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* kernel-trap.c -- PReP's PC ports and direct-mapped configuration, emulated.
  *
  *

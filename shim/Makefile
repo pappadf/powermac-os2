@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # os2shim -- OS/2 Warp (PowerPC Edition) from Open Firmware on an Apple Network Server
 CLANG  ?= clang
 LLD    ?= ld.lld

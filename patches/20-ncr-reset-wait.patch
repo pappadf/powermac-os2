@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # IBM's NCR driver (DD_SCSI0/DD_SCSI1 are the same 53C810 driver), in
 # ncr_chip_reset_bus.  After pulsing SCSI RST/ it reads SIST0 once and then
 # loops, up to 100,000 times with calibrated delays, re-reading ISTAT,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # The Microkernel's PCI configuration access on Bandit 1's own ports instead
 # of PC configuration mechanism #1 ($CF8/$CFC), which no Mac has.
 #

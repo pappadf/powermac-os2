@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* os2shim: one flat section at the image base; the pe-loader lays it out there. */
 ENTRY(_start)
 SECTIONS

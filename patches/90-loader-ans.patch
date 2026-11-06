@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # IBM's boot loader (BL_AUTO, also the CD's PReP boot partition) on the
 # Network Server's hardware.  Its PC-port helpers, PCI configuration routines
 # and NVRAM read become branches to the loader service the shim installs at

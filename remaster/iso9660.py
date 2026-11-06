@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 """Minimal ISO 9660 reader for the OS/2 PowerPC CDs (primary volume, no Joliet/RR)."""
 import struct
 
