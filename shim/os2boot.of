@@ -1,0 +1,31 @@
+\ SPDX-License-Identifier: GPL-2.0-only
+\ os2shim -- boot OS/2 Warp (PowerPC Edition) on an Apple Network Server 500/700
+\
+\ Once per machine, little-endian mode (the same settings Windows NT uses):
+\     setenv little-endian? true  setenv real-mode? false
+\     setenv real-base 3F00000    setenv load-base 3E00000   reset-all
+\ Then, with the OS/2 PowerPC CD 1 at SCSI ID 3 on the first fast/wide bus:
+\     load fd:,\os2boot.of
+\     load-base loadsize eval
+\
+\ This reads SHIM.EXE off this floppy into load-base, lays it out with the ROM's
+\ pe-loader and starts it.  @SECTORS@ is filled in by mkfloppy.sh.
+
+0 value os2-pe
+0 value os2-fd
+
+: os2-boot
+   " /packages/pe-loader" open-dev to os2-pe
+   3D00000 @MAPLEN@ " map-space" os2-pe $call-method
+   " /bandit/gc/swim3" open-dev to os2-fd
+@READS@
+   os2-fd close-dev
+   3E00000 @MAPLEN@ " map-space" os2-pe $call-method
+   3D00000 3E00000 @SIZE@ move
+   @SIZE@ to loadsize
+   init-program
+   ." os2shim: starting" cr
+   go
+;
+
+os2-boot

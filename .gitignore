@@ -1,0 +1,6 @@
+build/
+shim/build/
+__pycache__/
+*.pyc
+*.iso
+*.img

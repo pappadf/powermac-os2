@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# IBM's boot loader (BL_AUTO, also the CD's PReP boot partition) on the
+# Network Server's hardware.  Its PC-port helpers, PCI configuration routines
+# and NVRAM read become branches to the loader service the shim installs at
+# $40000 (src/loader-svc.h); its SCSI chip is reached through the memory BAR
+# the shim assigns, and its DMA addresses lose PReP's $80000000 offset.
+# Needs the shim built with this service (shim/ldrsvc.c).  All edits
+# are same-size, so BL_AUTO, whose position is the boot entry, does not move.
+file /BL_AUTO
+asm-raw 0xACE3C src/loader-scsi.S 20e8f7c6f7f4
+asm-raw 0xD44B4 src/loader-core.S eb27cbdc185a
+# The disk's loader, which the installer writes into the hard disk's boot
+# partition: the same edits at its own offsets (src/loader-fat.S).
+file /OS2/FAT_BL.HD
+asm-raw 0 src/loader-fat.S 0d19c0826b13

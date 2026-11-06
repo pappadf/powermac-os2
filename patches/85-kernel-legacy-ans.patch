@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The PC devices the Microkernel still reaches through PReP's I/O window --
+# its clock, NVRAM, DMA controller, timer, PMC, IBM's L2-cache register --
+# answered without the window (src/kernel-legacy.c): an MC146818 clock running
+# off the time base, a blank NVRAM, VGA ports on Bandit's I/O space, nothing
+# else.  Also the PReP DMA offset in dmabegin.  Needs patch 70 (the cave, BAT1).
+file /MK/MK_TEST.PPC
+asm src/kernel-legacy.c 49419bdcb622

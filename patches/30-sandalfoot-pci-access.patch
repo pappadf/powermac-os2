@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Give the Sandalfoot (planar ID $FE, the identity the shim's residual data gives the machine)
+# PCI configuration mechanism #1, as every other planar OS/2 supports with
+# PCI video already has (Polo, Woodfield, ...).  OS/2's video server walks
+# the PCI bus only on a "PCI 2.0 machine" -- one whose hardware database has
+# a pci_access_device (ports $CF8/$CFC) -- and on any other machine it
+# invents a single adapter with ID 0 that matches nothing, so no PCI
+# display is ever found.  The kernel's configuration trap (patch 97) answers
+# $CF8/$CFC on Bandit's own configuration cycles.
+file /MK/PPC_INFO.STZ
+replace-text '        built_in        = ppc_planar_audio_sandalfoot\n' '        built_in        = ppc_planar_audio_sandalfoot\n        built_in        = pci_access_device\n'

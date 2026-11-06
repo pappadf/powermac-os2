@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The Microkernel's interrupt controller: Grand Central instead of two 8259s
+# and the PReP interrupt-acknowledge register (src/kernel-ints.c).  Needs
+# patch 70 (the code cave and BAT1).  The shim no longer sets PReP's
+# little-endian bit in port $92, so the machine's interrupt line is Grand
+# Central's, as on any Network Server.
+file /MK/MK_TEST.PPC
+asm src/kernel-ints.c b610cfab7568

@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# OS/2's video server matches a PCI display adapter against the hardware
+# database by ID, and gets the database object's ID with
+# get_id() -> string_to_hex(the first 8 characters of its name).  The
+# database names an object "<stanza>:<instance>", and the CL-GD5434's stanza
+# is the 6-digit "A81013" (RDF.STZ), so the name is "A81013:1".
+# string_to_hex has no stop at ':' -- it takes it as a digit worth -29 --
+# and returns $A8101131 for it, which never equals the $00A81013 the PCI
+# walk reads, so the 5434 is never matched ("some adapters on PCI bus not
+# found in hrm database").  Only 8-digit stanza names work as shipped.
+#
+# string_to_hex rewritten in place (84 of its 112 bytes) to stop at NUL or
+# ':'; otherwise identical.  Source: the assembly below, little-endian.
+#
+#     li 12,0
+#  1: lbz 11,0(3); cmpwi 11,0; beq 9f; cmpwi 11,':'; beq 9f
+#     slwi 12,12,4
+#     cmpwi 11,'9'; bgt 2f; addi 11,11,-48; b 4f
+#  2: cmpwi 11,'F'; bgt 3f; addi 11,11,-55; b 4f
+#  3: addi 11,11,-87
+#  4: add 12,11,12; addi 3,3,1; b 1b
+#  9: ori 3,12,0; blr
+file /OS2/VPMISRV
+patch-sym string_to_hex 000080390000638900000b2c5c00824136208c550000638930000b2c1400804139000b2c0c008141d0ff6b39280000480000638941000b2c1400804146000b2c0c008141c9ff6b390c00004800006389a9ff6b39 000080390000638900000b2c400082413a000b2c3800824136208c5539000b2c0c008141d0ff6b391800004846000b2c0c008141c9ff6b3908000048a9ff6b3914628b7d01006338bcffff4b000083612000804e

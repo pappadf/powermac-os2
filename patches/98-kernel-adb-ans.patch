@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The 8042 keyboard controller OS/2's console driver drives, emulated on the
+# Network Server's ADB keyboard and mouse through Cuda (src/kernel-adb.c).
+# The configuration trap (patch 97) hands it ports $60/$64; patch 80 routes
+# IRQ 1 and 12 to Cuda's VIA and calls its clock hook.  Needs patches 70,
+# 80 and 97.
+file /MK/MK_TEST.PPC
+asm src/kernel-adb.c e5febbd0f00e

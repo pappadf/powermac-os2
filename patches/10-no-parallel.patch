@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# A Macintosh has no PC parallel port.  On the Network Server, initldev's
+# parallel loadable device (libldpar.so) probes ports $3BC-$3BE, finds
+# nothing, and then blocks for good in LD_InitPhysical, right after
+# "LD_InitPhysical: Before AddNodes".  That stalls the rest of the boot.
+# Drop it from initldev's argument list.
+file /BOOT.SCI
+comment-line 'PN_FILE_ARGV="libldpar.so"'
