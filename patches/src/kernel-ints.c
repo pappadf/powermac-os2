@@ -154,6 +154,17 @@ void gc_tick(void)
     }
 }
 
+/* interrupt()'s vector: gc_vector's, except that the VIA's source, which
+ * carries both IRQ 1 and 12 and so is always found as IRQ 1, is taken as the
+ * IRQ the emulated 8042's next byte is for (kernel-adb.c).  In
+ * mot_enable_l2_cache's body, past kernel-adb.c's code (kernel-cave.h). */
+__attribute__((section(".patch.mot_enable_l2_cache+0x150"), noinline, used))
+int gc_vector_kbd(void)
+{
+    int irq = gc_vector();
+    return irq == 1 ? ((int (*)(void))KBD_IRQ)() : irq;
+}
+
 /* The 8259 routines that remain whole functions. */
 AT(form_pic_mask) void k_form_pic_mask(void) { gc_apply_mask(PIC_MASK); }
 AT(pic_resume) void k_pic_resume(void) { gc_apply_mask(PIC_MASK); }
@@ -171,10 +182,10 @@ AT(vector_set_level) void k_vector_set_level(u32 irq)
 
 /* And the instruction-level patches. */
 __asm__(
-    /* interrupt(): the vector from gc_vector, not from the acknowledge register;
+    /* interrupt(): the vector from gc_vector_kbd, not from the acknowledge register;
      * none (-1) leaves through the normal exit. */
     "  .section .patch.interrupt+0x28, \"ax\"\n"
-    "  bl gc_vector\n"
+    "  bl gc_vector_kbd\n"
     "  mr. 7, 3\n"
     "  blt interrupt+0x70\n"
     /* picinit: Grand Central instead of the 8259s' initialisation words.  Its

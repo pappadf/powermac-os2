@@ -109,8 +109,18 @@ state:
   a mouse report becomes a PS/2 packet.
 - **Commands.** Controller and device commands are answered the way an 8042
   and a PS/2 keyboard and mouse would answer them.
-- **Delivery.** Bytes that are ready get delivered as IRQ 1 or 12 from the
-  clock tick.
+- **Delivery.** While a byte waits whose channel has its interrupt enabled
+  in the command byte, VIA timer 2 (unused otherwise) keeps the VIA's Grand
+  Central source raised. When OS/2 takes that source, `kbd_irq` names it
+  IRQ 12 if the byte at the head is the mouse's, else IRQ 1.
+- **Visibility.** Inside an interrupt (the kernel's in-interrupt flag), the
+  status and data ports show only a byte for the IRQ being taken. A driver
+  polling for a reply outside an interrupt sees every byte. IBM's keyboard
+  handler reads `$60` without checking the status, so this keeps it from
+  eating mouse bytes, and keeps interrupt handlers from taking a reply a
+  driver is polling for.
+- **Mouse packets** are queued whole, and only while the mouse interrupt is
+  enabled, so they can't hold up keystrokes during boot.
 
 ## Where the code goes
 
