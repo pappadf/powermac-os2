@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# BL_AUTO's built-in defaults name the CD, so the install boots with no serial input.
+file /BL_AUTO
+replace-text 'PN_BOOT_DEV="automatic"\nPN_BOOT_FS="automatic"\nPN_BOOT_CONFIG="boot.cfg"\n' 'PN_BOOT_DEV="cd3"\nPN_BOOT_FS="cdrom"\nPN_BOOT_CONFIG="boot.sci"\n\n\n\n\n\n\n\n\n\n\n'

@@ -5,4 +5,4 @@
 # IRQ 1 and 12 to Cuda's VIA and calls its clock hook.  Needs patches 70,
 # 80 and 97.
 file /MK/MK_TEST.PPC
-asm src/kernel-adb.c e5febbd0f00e
+asm src/kernel-adb.c 06c450eb8fd5

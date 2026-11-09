@@ -18,10 +18,22 @@
  *   - Commands written to $60 and $64 are answered as an 8042 and a PS/2
  *     keyboard and mouse would: $FA for each byte, the self-test results, the
  *     IDs, the command byte.
- *   - IRQ 1 is Grand Central's VIA source (kernel-ints.c), so a Cuda packet
- *     interrupts; bytes made here (answers, a key's second byte) are
- *     delivered by the clock (kbd_tick, from gc_tick) through the kernel's
- *     own dispatch, when the command byte enables the interrupt.
+ *   - IRQ 1 and IRQ 12 are both Grand Central's VIA source (kernel-ints.c),
+ *     so a Cuda packet interrupts.  Bytes made here (answers, a key's second
+ *     byte, the mouse's packets) interrupt through the same source: while
+ *     the next byte's interrupt is on in the command byte, kbd_line keeps
+ *     the VIA's timer 2 (which nothing else uses) running out, re-armed after
+ *     each access, so each byte brings a fresh edge.  The clock cannot
+ *     deliver them itself: while it runs, the kernel's mask holds every IRQ.
+ *   - A real 8042 raises IRQ 1 only for a keyboard byte and IRQ 12 only for
+ *     a mouse byte, and OS/2's handlers rely on it: kbd_intr reads $60
+ *     whatever the status says, and the mouse's handler only ever runs on
+ *     IRQ 12, and a driver polling for an answer with that answer's
+ *     interrupt off must not lose it to an interrupt handler.  So when the
+ *     VIA's source is taken, kbd_irq names the IRQ the next byte is for; in
+ *     that interrupt a reader sees the next byte only if it is for that IRQ
+ *     and its interrupt is on.  Any other reader (a thread, polling) sees
+ *     whatever comes next.
  *
  * Written from Apple's description of the protocol; the NT HAL for this
  * machine (powermac-nt-hal, src/cuda.c) drives the same handshake.
@@ -36,27 +48,30 @@ typedef unsigned char u8;
 #define VIA(n)     (GC_BASE + 0x16000u + (n) * 0x200u)
 #define VIA_B      VIA(0)
 #define VIA_DIRB   VIA(2)
+#define VIA_T2CL   VIA(8)
+#define VIA_T2CH   VIA(9)
 #define VIA_SR     VIA(10)
 #define VIA_ACR    VIA(11)
 #define VIA_IFR    VIA(13)
 #define VIA_IER    VIA(14)
 #define IF_SR      0x04
+#define IF_T2      0x20
 #define TREQ       0x08      /* port B, in, active low: Cuda has a packet */
 #define BYTEACK    0x10      /* port B, out */
 #define TIP        0x20      /* port B, out, active low: transfer in progress */
 #define ACR_SR_IN  0x0C
 #define ACR_SR_OUT 0x1C
 
-/* The kernel's 8259-style mask and its interrupt dispatch table (interrupt()). */
-#define PIC_MASK   (*(volatile u32 *)0xF01732F0)
-#define DISPATCH   ((void (**)(u32))0xF01822C0)
-#define IN_INTR    (*(volatile u32 *)0xF0173DE8)
-
 /* The kernel debugger's db_get_spregs and db_set_spregs, which nothing calls
  * (the kernel has no debugger stub on this boot), hold the code. */
 #define CUDA       __attribute__((section(".patch.db_get_spregs"), noinline, used))
-#define KBD        __attribute__((section(".patch.db_set_spregs+0x8"), noinline, used))
+#define KBD        __attribute__((section(".patch.db_set_spregs+0xc"), noinline, used))
+/* And IBM's mot_enable_l2_cache, which kernel-trap.c reduces to a blr. */
+#define MOT        __attribute__((section(".patch.mot_enable_l2_cache+0x4"), noinline, used))
 #define DATA       __attribute__((section(".patch.0xF016E660"), used))   /* CAVE_LEGACY_DATA */
+
+/* Set by interrupt() around taking a vector and running its handlers. */
+#define IN_INTR    (*(volatile u32 *)0xF0173DE8)
 
 /* The 8042's state: a queue of bytes for $60 (bit 8 marks the mouse's), the
  * command byte, and what the next byte written to $60 is for. */
@@ -64,7 +79,8 @@ DATA static struct {
     u16 q[32];
     u8 head, tail, cmd, next;   /* next: 0 the keyboard, $60 the command byte, $D4 the mouse */
     u8 up;                      /* Cuda set up and auto-polling */
-    u8 pad[3];
+    u8 aux;                     /* the interrupt being taken is IRQ 12 */
+    u8 pad[2];
 } k;
 
 /* ADB keyboard code -> scan code set 1 (bit 7: preceded by $E0; 0: none). */
@@ -98,6 +114,29 @@ CUDA static void put(u32 v)
         k.q[k.tail] = (u16)v;
         k.tail = t;
     }
+}
+
+/* Free places in the queue: a mouse packet goes in whole or not at all. */
+static inline u32 room(void)
+{
+    return (u32)(k.head - k.tail - 1) & 31;
+}
+
+/* The next byte would interrupt: there is one, and the command byte has its
+ * interrupt on (bit 0 the keyboard's, bit 1 the mouse's). */
+static inline int raised(void)
+{
+    return k.head != k.tail && (k.cmd & (k.q[k.head] & 0x100 ? 2 : 1));
+}
+
+/* Whether the reader at hand may have the next byte (see the top). */
+static inline int visible(void)
+{
+    if (k.head == k.tail)
+        return 0;
+    if (!IN_INTR)
+        return 1;
+    return raised() && !(k.q[k.head] & 0x100) == !k.aux;
 }
 
 /* Wait for the shift register to latch a byte (Cuda clocks every transfer). */
@@ -172,7 +211,9 @@ KBD void kbd_poll(void)
                 put(0xE0);
             put((s & 0x7F) | (c & 0x80));
         }
-    } else if ((p[2] >> 4) == 3 && n >= 5) {            /* the mouse: one PS/2 packet */
+    } else if ((p[2] >> 4) == 3 && n >= 5 && (k.cmd & 2) && room() >= 3) {
+        /* The mouse, while its interrupt is on (a packet nobody takes would
+         * hold up the keys behind it): one PS/2 packet. */
         int dy = (int)(signed char)(p[3] << 1) >> 1, dx = (int)(signed char)(p[4] << 1) >> 1;
         put(0x108 | !(p[3] & 0x80) | (dx < 0) << 4 | (-dy < 0) << 5);
         put(0x100 | (dx & 0xFF));
@@ -180,16 +221,40 @@ KBD void kbd_poll(void)
     }
 }
 
+/* The next byte would interrupt: timer 2 runs out shortly (it
+ * starts, and its flag clears, as its high byte is written), and its
+ * interrupt is on.  Otherwise it is off. */
+MOT void kbd_line(void)
+{
+    if (raised()) {
+        wr(VIA_T2CL, 0x20);
+        wr(VIA_T2CH, 0);
+        wr(VIA_IER, 0x80 | IF_T2);
+    } else {
+        wr(VIA_IER, IF_T2);
+        rd(VIA_T2CL);
+    }
+}
+
+/* The VIA's source taken (kernel-ints.c): the IRQ the next byte is for. */
+MOT int kbd_irq(void)
+{
+    k.aux = raised() && (k.q[k.head] & 0x100);
+    return k.aux ? 12 : 1;
+}
+
 /* An access to port $60 or $64. */
-KBD u32 kbd_port(u32 port, int store, u32 v)
+KBD static u32 port_access(u32 port, int store, u32 v)
 {
     if (!store) {
         if (port == 0x64) {
             if (k.head == k.tail)
                 kbd_poll();
-            return 0x14 | (k.head != k.tail) | (k.head != k.tail && (k.q[k.head] & 0x100)) << 5;
+            if (!visible())
+                return 0x14;
+            return 0x15 | (k.q[k.head] & 0x100) >> 3;
         }
-        if (k.head == k.tail)
+        if (!visible())
             return 0;
         v = k.q[k.head] & 0xFF;
         k.head = (k.head + 1) & 31;
@@ -226,26 +291,33 @@ KBD u32 kbd_port(u32 port, int store, u32 v)
             put(0xAB);
             put(0x41);
         }
+    } else if (v == 0xE9 && aux) {                      /* the mouse's status: */
+        put(0x120);                                     /* stream mode, reporting, no button */
+        put(0x102);                                     /* 4 counts/mm */
+        put(0x164);                                     /* 100 reports/s */
     }
     return 0;
 }
 
-/* From the clock: bytes waiting and their interrupt enabled -> dispatch it. */
-__attribute__((section(".patch.l2_cache_dpe+0x8"), noinline, used))  /* after its li 3, 0; blr */
-void kbd_tick(void)
+KBD u32 kbd_port(u32 port, int store, u32 v)
 {
-    if (k.head == k.tail)
-        return;
-    u32 irq = k.q[k.head] & 0x100 ? 12 : 1;
-    if (!(k.cmd & (irq == 1 ? 1 : 2)) || (PIC_MASK & (1u << irq)))
-        return;
-    DISPATCH[irq](irq);
+    v = port_access(port, store, v);
+    kbd_line();
+    return v;
+}
+
+/* From the clock: bytes still waiting get another edge. */
+MOT void kbd_tick(void)
+{
+    if (k.head != k.tail)
+        kbd_line();
 }
 
 /* The entry points the other patches call, at fixed addresses: kernel-trap.c's
- * port path (kbd_port, $F01031A0) and kernel-ints.c's clock (kbd_tick,
- * $F01031A4). */
+ * port path (kbd_port, $F01031A0), kernel-ints.c's clock (kbd_tick,
+ * $F01031A4) and its vector (kbd_irq, $F01031A8). */
 __asm__(
     "  .section .patch.db_set_spregs, \"ax\"\n"
     "  b kbd_port\n"
-    "  b kbd_tick\n");
+    "  b kbd_tick\n"
+    "  b kbd_irq\n");

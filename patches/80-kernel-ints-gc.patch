@@ -5,4 +5,4 @@
 # little-endian bit in port $92, so the machine's interrupt line is Grand
 # Central's, as on any Network Server.
 file /MK/MK_TEST.PPC
-asm src/kernel-ints.c b610cfab7568
+asm src/kernel-ints.c 988e5216bec0

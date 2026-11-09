@@ -22,14 +22,13 @@ machine model). Real hardware hasn't been tried yet. What works:
   the CD or from an installed disk.
 - The kernel and its drivers come up: SCSI on the first fast/wide bus, the
   serial console on the Mac's serial port, video on the on-board Cirrus 54M30,
-  and the keyboard over ADB.
+  and the keyboard and mouse over ADB.
 - The installer runs (Easy Installation, 2,045 files) onto a disk at SCSI
   ID 6.
-- The installed system boots from that disk to the Workplace Shell and
-  accepts keys.
+- The installed system boots from that disk to the Workplace Shell, with
+  the keyboard and the mouse (pointer movement and buttons).
 
 Not working yet:
-- **Mouse:** ADB mouse movement doesn't reach OS/2 yet.
 - **Second SCSI bus:** only the first fast/wide bus is used. The second
   53C825A is hidden.
 - **Persistence:** OS/2's NVRAM reads as blank, and the clock runs from the
@@ -74,16 +73,21 @@ the input image.
 
 ## Booting on a Network Server
 
-**Once per machine**, put Open Firmware in little-endian mode. These are the
-same settings Windows NT uses on this machine:
+**The first time**, the floppy puts Open Firmware in little-endian mode by
+itself. On a machine that isn't set up yet, `os2boot.of` sets the same
+variables Windows NT uses on this machine and resets:
 
 ```
 setenv little-endian? true
 setenv real-mode? false
 setenv real-base 3F00000
 setenv load-base 3E00000
-reset-all
+setenv boot-device fd:,\os2boot.of
 ```
+
+It also points `boot-device` at itself, so after the reset, and at every
+later power-on while the floppy is in, the firmware boots it without
+typing.
 
 **To install:**
 1. Put the patched CD at SCSI ID 3 and a blank disk at **SCSI ID 6** on the
@@ -93,13 +97,11 @@ reset-all
    load fd:,\os2boot.of
    load-base loadsize eval
    ```
-3. The boot loader talks on the serial port (ttya). Answer its prompts:
-   - Enter for a manual boot
-   - `cd3` for `PN_BOOT_DEV`
-   - `cdrom` for `PN_BOOT_FS`
-   - `boot.sci` for `PN_BOOT_CONFIG`
-   - Enter through the configuration lines, and once more to start the
-     kernel.
+   On a machine not yet in little-endian mode this resets once and then
+   continues by itself.
+3. IBM's boot loader picks the CD on its own (patch 99): its defaults name
+   `cd3`, `cdrom` and `boot.sci`, so no serial input is needed. Its log goes
+   to the serial port (ttya).
 4. The installer appears on the screen. Easy Installation takes three
    Enters, then copies the system to the disk.
 

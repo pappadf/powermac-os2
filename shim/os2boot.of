@@ -1,18 +1,36 @@
 \ SPDX-License-Identifier: GPL-2.0-only
 \ os2shim -- boot OS/2 Warp (PowerPC Edition) on an Apple Network Server 500/700
 \
-\ Once per machine, little-endian mode (the same settings Windows NT uses):
-\     setenv little-endian? true  setenv real-mode? false
-\     setenv real-base 3F00000    setenv load-base 3E00000   reset-all
-\ Then, with the OS/2 PowerPC CD 1 at SCSI ID 3 on the first fast/wide bus:
+\ With the OS/2 PowerPC CD 1 at SCSI ID 3 on the first fast/wide bus:
 \     load fd:,\os2boot.of
 \     load-base loadsize eval
+\ On a machine not yet in little-endian mode the script sets the variables
+\ Windows NT also uses (little-endian? real-mode? real-base load-base), points
+\ boot-device at itself and resets; the firmware then boots this script on its
+\ own, and every later power-on does the same while the floppy is in.
 \
 \ This reads SHIM.EXE off this floppy into load-base, lays it out with the ROM's
 \ pe-loader and starts it.  @SECTORS@ is filled in by mkfloppy.sh.
 
 0 value os2-pe
 0 value os2-fd
+
+\ Running little-endian (a stored 1 reads back low byte first), with the
+\ memory layout the shim is laid out for.
+: os2-ready? ( -- flag )
+   1 pad !  pad c@ 1 =
+   real-mode? 0= and  real-base 3F00000 = and  load-base 3E00000 = and
+;
+
+: os2-configure
+   ." os2shim: setting little-endian mode, then resetting" cr
+   " true" " little-endian?" $setenv
+   " false" " real-mode?" $setenv
+   " 3F00000" " real-base" $setenv
+   " 3E00000" " load-base" $setenv
+   " fd:,\os2boot.of" " boot-device" $setenv
+   reset-all
+;
 
 : os2-boot
    " /packages/pe-loader" open-dev to os2-pe
@@ -28,4 +46,5 @@
    go
 ;
 
-os2-boot
+: os2-main  os2-ready? if os2-boot else os2-configure then ;
+os2-main
