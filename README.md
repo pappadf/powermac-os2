@@ -34,7 +34,9 @@ Real hardware hasn't been tried yet. What works:
 - The installer runs (Easy Installation, 2,045 files) onto a disk at SCSI
   ID 6.
 - The installed system boots from that disk to the Workplace Shell, with
-  the keyboard and the mouse (pointer movement and buttons).
+  the keyboard and the mouse (pointer movement and buttons), with or
+  without a CD in the drive. Patch 45 fixes a startup race in IBM's OS/2
+  server that, on the 8500, hung every boot before the desktop.
 
 Not working yet:
 - **Second SCSI bus:** only the first fast/wide bus is used. The second
@@ -125,9 +127,10 @@ typing.
 4. The installer appears on the screen. Easy Installation takes three
    Enters, then copies the system to the disk.
 
-**To boot the installed system**, remove the CD and boot the same floppy.
-It finds the disk's PReP boot partition, and the disk's own loader starts
-OS/2 without any prompts.
+**To boot the installed system**, boot the same floppy. It looks for a
+PReP boot partition on the hard disks before the CDs, so it finds the
+installed disk even with the install CD still in its drive, and the disk's
+own loader starts OS/2 without any prompts.
 
 ## How it works
 
