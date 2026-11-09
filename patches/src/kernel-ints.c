@@ -24,7 +24,8 @@
  * still high, re-interrupts at once and that thread never runs.
  *
  * OS/2's own IRQ numbers stay (the hardware database assigns them: the
- * Sandalfoot's SCSI line is 13).  irq_gc maps each to a Grand Central source.
+ * Sandalfoot's SCSI line is 13).  irq_gc maps each to the Grand Central
+ * sources it stands for, as a mask.
  * The mask follows the kernel's 8259-style one, through that map.  An
  * interrupt is the highest-priority pending source in 8259 order: an edge
  * IRQ's latched event (cleared as it is taken), or a level IRQ's live level
@@ -47,25 +48,33 @@ typedef unsigned char u8;
 #define GC_MASK   (GC_BASE + 0x24)
 #define GC_CLEAR  (GC_BASE + 0x28)
 #define GC_LEVELS (GC_BASE + 0x2C)
-#define NONE      0xFF
+#define NONE      0
+#define SRC(n)    (1u << (n))
 #define ACK       0x80000000u   /* a Clear write with this bit: mode 1, the latch dropped */
 
 /* The kernel's 8259-style mask (a set bit masks the IRQ), as form_pic_mask reads it. */
 #define PIC_MASK  (*(volatile u32 *)0xF01732F0)
 
-/* OS/2 IRQ -> Grand Central source (Network Server Hardware Developer Notes, the interrupt map). */
-CAVE_DATA static const u8 irq_gc[16] = {
+/* OS/2 IRQ -> Grand Central sources (Network Server Hardware Developer Notes,
+ * the interrupt map; Apple's 9500 external-interrupt table).  In the cave's
+ * free space past kernel-adb.c's state (kernel-cave.h). */
+__attribute__((section(".patch.0xF016E740"), used)) static const u32 irq_gc[16] = {
     NONE,
-    18,   /* IRQ 1: the 8042's keyboard, emulated on ADB (kernel-adb.c): Cuda's VIA */
+    SRC(18),  /* IRQ 1: the 8042's keyboard, emulated on ADB (kernel-adb.c): Cuda's VIA */
     NONE, NONE, NONE, NONE, NONE, NONE,
     NONE, NONE, NONE, NONE,
-    18,   /* IRQ 12: its mouse, the same */
-    22,   /* IRQ 13: the first 53C825A (FW SCSI 0), the Sandalfoot's SCSI line */
+    SRC(18),  /* IRQ 12: its mouse, the same */
+    SRC(22) | SRC(23), /* IRQ 13: the Sandalfoot's SCSI line.  The 53C825A OS/2
+               * drives is the Network Server's first soldered chip (FW SCSI 0,
+               * source 22) or, without one, a 53C825A card in the first PCI
+               * slot (Bandit 1 device 13), whose INTA is source 23 on the
+               * Network Server and on a Power Macintosh 7500/8500/9500 alike.
+               * Only one of the two is ever there; the other line stays low. */
     NONE,
-    NONE, /* IRQ 15: nothing.  The second 53C825A (source 26) is hidden from
-           * OS/2, as the loader and the configuration trap hide it; routed
-           * here, its line (left asserted) woke the second NCR instance,
-           * which has no chip, on every clock tick. */
+    NONE,     /* IRQ 15: nothing.  The second 53C825A (source 26) is hidden from
+               * OS/2, as the loader and the configuration trap hide it; routed
+               * here, its line (left asserted) woke the second NCR instance,
+               * which has no chip, on every clock tick. */
 };
 
 /* The Grand Central sources of the IRQs set level-triggered (vector_set_level). */
@@ -96,8 +105,8 @@ CAVE void gc_apply_mask(u32 pic_mask)
 {
     u32 m = 0;
     for (u32 irq = 0; irq < 16; irq++)
-        if (!(pic_mask & (1u << irq)) && irq_gc[irq] != NONE)
-            m |= 1u << irq_gc[irq];
+        if (!(pic_mask & (1u << irq)))
+            m |= irq_gc[irq];
     wr(GC_MASK, m);
 }
 
@@ -122,11 +131,11 @@ CAVE int gc_vector(void)
     u32 pending = gc_pending(), clear = ACK;
     int irq = -1;
     for (u32 i = 0; i < sizeof irq_order; i++) {
-        u32 src = irq_gc[irq_order[i]];
-        if (src != NONE && (pending & (1u << src))) {
+        u32 src = irq_gc[irq_order[i]] & pending;
+        if (src) {
             irq = (int)irq_order[i];
-            clear |= 1u << src;
-            gc_rearm &= ~(1u << src);
+            clear |= src;
+            gc_rearm &= ~src;
             break;
         }
     }
@@ -171,13 +180,13 @@ AT(pic_resume) void k_pic_resume(void) { gc_apply_mask(PIC_MASK); }
 AT(pic_suspend) u32 k_pic_suspend(void) { wr(GC_MASK, 0); return 0; }
 AT(vector_set_edge) void k_vector_set_edge(u32 irq)
 {
-    if (irq < 16 && irq_gc[irq] != NONE)
-        gc_level &= ~(1u << irq_gc[irq]);
+    if (irq < 16)
+        gc_level &= ~irq_gc[irq];
 }
 AT(vector_set_level) void k_vector_set_level(u32 irq)
 {
-    if (irq < 16 && irq_gc[irq] != NONE)
-        gc_level |= 1u << irq_gc[irq];
+    if (irq < 16)
+        gc_level |= irq_gc[irq];
 }
 
 /* And the instruction-level patches. */

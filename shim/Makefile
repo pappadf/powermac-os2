@@ -30,11 +30,13 @@ $(B)/shim.elf: $(B)/start.o $(B)/shim.o $(B)/ldrsvc_blob.o shim.ld
 	$(LLD) -T shim.ld -static -nostdlib -o $@ $(B)/start.o $(B)/shim.o $(B)/ldrsvc_blob.o
 $(B)/shim.bin: $(B)/shim.elf
 	$(OBJCOPY) -O binary $< $@
-$(B)/SHIM.EXE: $(B)/shim.bin mkpe.py
-	python3 mkpe.py $< $@ 0x00050000
-# A FAT12 1.44 MB floppy: OS2BOOT.OF (sectors of SHIM.EXE filled in) and SHIM.EXE.
-$(B)/os2shim.img: $(B)/SHIM.EXE os2boot.of mkfloppy.sh
-	sh mkfloppy.sh $(B)/SHIM.EXE os2boot.of $@
+# An XCOFF, for Open Firmware's own xcoff-loader (every Power Macintosh ROM
+# and the Network Server's production ROM; only its 2.26NT ROM has a pe-loader).
+$(B)/SHIM.XCF: $(B)/shim.bin mkxcoff.py
+	python3 mkxcoff.py $< $@ 0x00050000
+# A FAT12 1.44 MB floppy: OS2BOOT.OF (sectors of SHIM.XCF filled in) and SHIM.XCF.
+$(B)/os2shim.img: $(B)/SHIM.XCF os2boot.of mkfloppy.sh
+	sh mkfloppy.sh $(B)/SHIM.XCF os2boot.of $@
 
 clean:
 	rm -rf $(B)

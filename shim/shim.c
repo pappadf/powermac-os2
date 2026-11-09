@@ -36,12 +36,11 @@
 #include "prep-residual.h"
 #include "../patches/src/loader-svc.h"
 
-// The boot device: the first SCSI ID on the first fast/wide bus whose
+// The boot device: the first SCSI ID on the 53C825A (scsi_dev, below) whose
 // partition table has a PReP boot partition (type $41), as PReP firmware's
 // boot list would find it.  A fresh install finds the CD (ID 3); once OS/2
 // is installed, the hard disk the installer partitioned comes first, which
 // is what its "remove the CD-ROM and restart" means.
-#define SCSI_BUS     "/bandit/53c825@11/sd@"
 #define LOAD_ADDR    0x00800000u // the boot partition, byte 0
 #define LOAD_MAX     0x000C0000u // what is claimed there
 // IBM's stub, wherever the partition header puts its entry: the little-endian
@@ -153,6 +152,15 @@ static void escc_puts(const char *s) {
     }
 }
 
+static void shim_fail(const char *why) __attribute__((noreturn));
+static void shim_fail(const char *why) {
+    escc_puts("os2shim: ");
+    escc_puts(why);
+    escc_puts("\r\n");
+    for (;;)
+        ;
+}
+
 // A Bandit 1 type-0 configuration cycle: (1 << device) | (function << 8) |
 // register to the address port, then the data port (NT HAL pci.c).
 static void cfg_select(unsigned dev, uint32_t reg) {
@@ -187,6 +195,205 @@ static void copy(void *d, const void *s, size_t n) {
     const uint8_t *sb = s;
     while (n--)
         *db++ = *sb++;
+}
+
+// --- the SCSI chip, without Open Firmware -------------------------------------
+//
+// The boot partition is read by the shim itself, through the 53C825A's own
+// SCRIPTS processor, after Open Firmware is left.  Open Firmware has a driver
+// only for the Network Server's soldered chip; a Power Macintosh's has none
+// for a PC SCSI card, which carries no FCode.  One small polled driver serves
+// both: select with ATN, an IDENTIFY without disconnect privilege, the
+// command, the data in, status and message in.  Everything is physical (the
+// shim runs virtual == physical through BAT0, and Bandit's bus addresses are
+// physical), and the CPU's munged little-endian stores reach the chip as PCI
+// little-endian words, as they do for IBM's own driver later.
+
+// The 53C825A the loader and OS/2 drive: the Network Server's first soldered
+// chip (Bandit 1 device 17) where there is one, otherwise a 53C825A card in
+// the first PCI slot, device 13 (a Power Macintosh 7500/8500/9500's A1, a
+// Network Server's slot 1).
+static unsigned scsi_dev;
+static int is_53c825(unsigned dev) {
+    return cfg_read32(dev, 0x00) == 0x00031000u;
+}
+
+#define NCR(o)       (SCSI_MEM_BAR + (o))
+#define NCR_SCNTL0   0x00
+#define NCR_SCID     0x04
+#define NCR_DSTAT    0x0C
+#define NCR_ISTAT    0x14
+#define NCR_DSP      0x2C
+#define NCR_DSPS     0x30
+#define NCR_DMODE    0x38
+#define NCR_DIEN     0x39
+#define NCR_SIEN0    0x40
+#define NCR_SIEN1    0x41
+#define NCR_SIST0    0x42
+#define NCR_SIST1    0x43
+#define NCR_STIME0   0x48
+#define NCR_RESPID0  0x4A
+#define NCR_RESPID1  0x4B
+
+static uint8_t ncr_rd(uint32_t o) {
+    uint8_t v = *(volatile uint8_t *)NCR(o);
+    eieio();
+    return v;
+}
+static void ncr_wr(uint32_t o, uint8_t v) {
+    *(volatile uint8_t *)NCR(o) = v;
+    eieio();
+}
+
+// The work area: the script, its message and command bytes, and a bounce
+// buffer for whole blocks.  Below the boot image's $800000 and above the
+// residual data's 64 KB at $700000.
+#define SCSI_AREA    0x00780000u
+#define SCSI_SCRIPT  (SCSI_AREA + 0x000)
+#define SCSI_MSGOUT  (SCSI_AREA + 0x100)
+#define SCSI_CDB     (SCSI_AREA + 0x110)
+#define SCSI_STATUS  (SCSI_AREA + 0x120)
+#define SCSI_MSGIN   (SCSI_AREA + 0x124)
+#define SCSI_SENSE   (SCSI_AREA + 0x200)
+#define SCSI_BOUNCE  0x00900000u
+#define SCSI_CHUNK   0x8000u      // bytes per READ(10)
+
+static void dcache_flush(uint32_t a, uint32_t n) {
+    for (uint32_t p = a & ~31u; p < a + n; p += 32)
+        __asm__ volatile("dcbf 0,%0" ::"r"(p) : "memory");
+    __asm__ volatile("sync" ::: "memory");
+}
+
+static void scsi_init(void) {
+    ncr_wr(NCR_ISTAT, 0x40); // software reset
+    for (volatile int i = 0; i < 1000; i++)
+        ;
+    ncr_wr(NCR_ISTAT, 0x00);
+    ncr_wr(NCR_SCNTL0, 0xC0);  // full arbitration
+    ncr_wr(NCR_SCID, 0x47);    // ID 7, respond to reselection
+    ncr_wr(NCR_RESPID0, 0x80);
+    ncr_wr(NCR_RESPID1, 0x00);
+    ncr_wr(NCR_STIME0, 0x0C);  // selection time-out about 100 ms
+    ncr_wr(NCR_DMODE, 0x00);
+    ncr_wr(NCR_DIEN, 0x7D);    // every DMA condition halts and interrupts
+    ncr_wr(NCR_SIEN0, 0x8F);   // phase mismatch, gross error, unexpected disconnect, reset, parity
+    ncr_wr(NCR_SIEN1, 0x04);   // selection time-out
+}
+
+// One command, polled: the SCSI status byte (0 good, 2 check condition), or
+// -1 when nothing answers at that ID, -2 on any other failure.
+static int scsi_cmd(int id, const uint8_t *cdb, unsigned cdblen, uint32_t buf, uint32_t len) {
+    uint32_t *s = (uint32_t *)SCSI_SCRIPT;
+    const uint32_t at = SCSI_SCRIPT;
+    s[0] = 0x41000000u | ((uint32_t)id << 16); // SELECT ATN id; alternate (reselected): INT 2
+    s[1] = at + 4 * 20;
+    s[2] = 0x0E000001u; // MOVE 1, msgout, WHEN MSG_OUT
+    s[3] = SCSI_MSGOUT;
+    s[4] = 0x0A000000u | cdblen; // MOVE cdblen, cdb, WHEN CMD
+    s[5] = SCSI_CDB;
+    s[6] = len ? 0x830B0000u : 0x80080000u; // JUMP status, WHEN STATUS (always if no data)
+    s[7] = at + 4 * 10;
+    s[8] = 0x09000000u | len; // MOVE len, buf, WHEN DATA_IN
+    s[9] = buf;
+    s[10] = 0x0B000001u; // MOVE 1, status, WHEN STATUS
+    s[11] = SCSI_STATUS;
+    s[12] = 0x0F000001u; // MOVE 1, msgin, WHEN MSG_IN
+    s[13] = SCSI_MSGIN;
+    s[14] = 0x60000040u; // CLEAR ACK
+    s[15] = 0;
+    s[16] = 0x48000000u; // WAIT DISCONNECT
+    s[17] = 0;
+    s[18] = 0x98080000u; // INT 1: done
+    s[19] = 1;
+    s[20] = 0x98080000u; // INT 2: reselected (never: no disconnect privilege)
+    s[21] = 2;
+    *(volatile uint8_t *)SCSI_MSGOUT = 0x80; // IDENTIFY, LUN 0, no disconnect
+    for (unsigned i = 0; i < cdblen; i++)
+        ((volatile uint8_t *)SCSI_CDB)[i] = cdb[i];
+    *(volatile uint8_t *)SCSI_STATUS = 0xFF;
+    dcache_flush(SCSI_AREA, 0x200);
+    if (len)
+        dcache_flush(buf, len);
+
+    *(volatile uint32_t *)NCR(NCR_DSP) = at;
+    eieio();
+    for (uint32_t spin = 0; spin < 50000000u; spin++) {
+        uint8_t istat = ncr_rd(NCR_ISTAT);
+        if (!(istat & 0x03))
+            continue;
+        uint8_t dstat = 0, sist0 = 0, sist1 = 0;
+        if (istat & 0x01)
+            dstat = ncr_rd(NCR_DSTAT);
+        if (istat & 0x02) {
+            sist0 = ncr_rd(NCR_SIST0);
+            sist1 = ncr_rd(NCR_SIST1);
+        }
+        if (len)
+            dcache_flush(buf, len);
+        dcache_flush(SCSI_AREA, 0x200);
+        if (sist1 & 0x04)
+            return -1; // selection time-out: no device
+        if (sist0)
+            return -2; // phase mismatch, unexpected disconnect, gross error, reset, parity
+        if ((dstat & 0x04) && *(volatile uint32_t *)NCR(NCR_DSPS) == 1)
+            return *(volatile uint8_t *)SCSI_STATUS;
+        return -2;
+    }
+    return -2;
+}
+
+// A command with the retries a fresh target needs (unit attention after
+// reset, a CD spinning up): the status, or a negative error.
+static int scsi_do(int id, const uint8_t *cdb, unsigned cdblen, uint32_t buf, uint32_t len) {
+    int st = -2;
+    for (int tries = 0; tries < 8; tries++) {
+        st = scsi_cmd(id, cdb, cdblen, buf, len);
+        if (st == 0 || st == -1)
+            return st;
+        if (st == 2) {
+            static const uint8_t sense[6] = {0x03, 0, 0, 0, 18, 0};
+            scsi_cmd(id, sense, 6, SCSI_SENSE, 18);
+        }
+    }
+    return st;
+}
+
+static uint32_t scsi_block[8]; // the block size at each ID, once read
+
+// Bytes [off, off + len) of the device at `id` into dst: whole blocks through
+// the bounce buffer.  0 on success.
+static int scsi_read(int id, uint32_t off, uint32_t len, void *dst) {
+    uint32_t bs = scsi_block[id];
+    if (!bs) {
+        static const uint8_t cap[10] = {0x25, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        if (scsi_do(id, cap, 10, SCSI_SENSE, 8) != 0)
+            return -1;
+        const volatile uint8_t *c = (const volatile uint8_t *)SCSI_SENSE;
+        bs = ((uint32_t)c[4] << 24) | ((uint32_t)c[5] << 16) | ((uint32_t)c[6] << 8) | c[7];
+        if (bs != 512 && bs != 2048)
+            return -1;
+        scsi_block[id] = bs;
+    }
+    uint8_t *d = dst;
+    while (len) {
+        uint32_t lba = off / bs, skip = off % bs;
+        uint32_t want = skip + len;
+        if (want > SCSI_CHUNK)
+            want = SCSI_CHUNK;
+        uint32_t nblk = (want + bs - 1) / bs;
+        uint8_t rd10[10] = {0x28, 0, (uint8_t)(lba >> 24), (uint8_t)(lba >> 16), (uint8_t)(lba >> 8), (uint8_t)lba,
+                            0, (uint8_t)(nblk >> 8), (uint8_t)nblk, 0};
+        if (scsi_do(id, rd10, 10, SCSI_BOUNCE, nblk * bs) != 0)
+            return -1;
+        uint32_t n = nblk * bs - skip;
+        if (n > len)
+            n = len;
+        copy(d, (const void *)(SCSI_BOUNCE + skip), n);
+        d += n;
+        off += n;
+        len -= n;
+    }
+    return 0;
 }
 
 #define S32(x) (x) = __builtin_bswap32(x)
@@ -335,72 +542,71 @@ void shim_main(void) {
     if (of_claim(RESIDUAL_ADDR, 0x10000) != RESIDUAL_ADDR || of_claim(LOAD_ADDR, 0xC0000) != LOAD_ADDR)
         of_fail("cannot claim $700000/$800000");
     of_claim(0x000FF000u, 0x1000); // the stub's stack page (may already be Open Firmware's: harmless)
+    of_puts("os2shim: leaving Open Firmware\r\n");
+
+    // From here on nothing of Open Firmware's is used.
+    shim_take_mmu();
+    escc_puts("os2shim: out of Open Firmware\r\n");
+
+    // The 53C825A (scsi_dev), as the loader will find it: its registers
+    // through its memory BAR at SCSI_MEM_BAR (the loader's base, remaster
+    // patch 90), its I/O BAR at PReP's $20000000 (loader-svc.h), I/O and
+    // memory decode and bus mastering on.
+    scsi_dev = is_53c825(17) ? 17 : is_53c825(13) ? 13 : 0;
+    if (!scsi_dev)
+        shim_fail("no 53C825A: neither the Network Server's (device 17) nor a card in the first PCI slot (device 13)");
+    escc_puts(scsi_dev == 17 ? "os2shim: SCSI: the built-in 53C825A (device 17)\r\n"
+                             : "os2shim: SCSI: a 53C825A card in the first PCI slot (device 13)\r\n");
+    cfg_write32(scsi_dev, 0x14, SCSI_MEM_BAR);
+    cfg_write32(scsi_dev, 0x10, SCSI_IO_BAR);
+    // Its SCRIPTS RAM (BAR2, 4 KB) beside them, out of the 54M30's way: a
+    // Power Macintosh's Open Firmware leaves it at the bottom of the PCI
+    // memory it assigned, $82000000, which is where the display memory goes
+    // below (VIDEO_MEM_BAR).  OS/2 never sees this BAR (the configuration trap
+    // presents a 53C810, which has none).
+    cfg_write32(scsi_dev, 0x18, SCSI_MEM_BAR + 0x1000u);
+    cfg_write32(scsi_dev, 0x04, (cfg_read32(scsi_dev, 0x04) & 0xFFFF) | 0x0007);
+    scsi_init();
 
     // Find the boot device and its PReP boot partition.
     static uint8_t mbr[512];
-    char path[32];
-    uint32_t ih = 0, part_lba = 0, part_len = 0;
-    int boot_id = -1; // the SCSI ID booted from (reported below)
+    uint32_t part_lba = 0, part_len = 0;
+    int boot_id = -1;
     for (int id = 0; id <= 6 && !part_len; id++) {
-        size_t n = 0;
-        for (const char *q = SCSI_BUS; *q; q++)
-            path[n++] = *q;
-        path[n++] = (char)('0' + id);
-        path[n++] = ',';
-        path[n++] = '0';
-        path[n] = 0;
-        uint32_t a1[1] = {(uint32_t)path}, got = 0, rc = 0;
-        if (cif("open", 1, 1, a1, &ih) || !ih)
+        if (scsi_read(id, 0, 512, mbr) || mbr[510] != 0x55 || mbr[511] != 0xAA)
             continue;
-        uint32_t a2[3] = {ih, 0, 0};
-        cif("seek", 3, 1, a2, &rc);
-        uint32_t a3[3] = {ih, (uint32_t)mbr, 512};
-        cif("read", 3, 1, a3, &got);
-        if (got == 512 && mbr[510] == 0x55 && mbr[511] == 0xAA) {
-            for (int e = 0; e < 4; e++) {
-                const uint8_t *pe = mbr + 446 + 16 * e;
-                if (pe[4] == 0x41) {
-                    part_lba = le32_bytes(pe + 8);
-                    part_len = le32_bytes(pe + 12);
-                    boot_id = id;
-                    break;
-                }
+        for (int e = 0; e < 4; e++) {
+            const uint8_t *pe = mbr + 446 + 16 * e;
+            if (pe[4] == 0x41) {
+                part_lba = le32_bytes(pe + 8);
+                part_len = le32_bytes(pe + 12);
+                boot_id = id;
+                break;
             }
-        }
-        if (!part_len) {
-            uint32_t a4[1] = {ih};
-            cif("close", 1, 0, a4, NULL);
         }
     }
     if (!part_len)
-        of_fail("no PReP boot partition (type $41) on " SCSI_BUS "0-6");
-    (void)boot_id;
-    of_puts("os2shim: booting ");
-    of_puts(path);
-    of_puts("\r\n");
+        shim_fail("no PReP boot partition (type $41) at SCSI ID 0-6");
+    {
+        char m[] = "os2shim: booting SCSI ID 0\r\n";
+        m[25] = (char)('0' + boot_id);
+        escc_puts(m);
+    }
 
     // Its header (the second sector: entry offset, image length), then the
     // image, as far as the partition or the image ends, whichever is first.
-    uint32_t got = 0, rc = 0;
-    uint32_t a2[3] = {ih, 0, part_lba * 512u};
-    cif("seek", 3, 1, a2, &rc);
-    uint32_t a3[3] = {ih, LOAD_ADDR, 1024};
-    cif("read", 3, 1, a3, &got);
+    if (scsi_read(boot_id, part_lba * 512u, 1024, (void *)LOAD_ADDR))
+        shim_fail("cannot read the boot partition");
     const uint8_t *img = (const uint8_t *)LOAD_ADDR;
     uint32_t entry_off = le32_bytes(img + 0x200);
     uint32_t img_len = le32_bytes(img + 0x204);
     uint32_t want = ((entry_off + img_len + 511u) & ~511u);
     if (want > part_len * 512u)
         want = part_len * 512u;
-    if (got != 1024 || entry_off < 0x400u || want > LOAD_MAX || entry_off + 0x1000u > want)
-        of_fail("not an OS/2 PowerPC boot partition");
-    cif("seek", 3, 1, a2, &rc);
-    uint32_t a5[3] = {ih, LOAD_ADDR, want};
-    cif("read", 3, 1, a5, &got);
-    uint32_t a4[1] = {ih};
-    cif("close", 1, 0, a4, NULL);
-    if (got != want)
-        of_fail("short read of the boot partition");
+    if (entry_off < 0x400u || want > LOAD_MAX || entry_off + 0x1000u > want)
+        shim_fail("not an OS/2 PowerPC boot partition");
+    if (scsi_read(boot_id, part_lba * 512u, want, (void *)LOAD_ADDR))
+        shim_fail("short read of the boot partition");
     // The stub's one store into its own image (at entry+$4D4): the word at
     // entry+$C20 becomes the sum of those at +$C14 and +$C1C, big-endian.
     // Then the length it byte-reverses is that word less +$C14's and the
@@ -414,18 +620,9 @@ void shim_main(void) {
     im[entry_off + 0xC23] = (uint8_t)sum;
     uint32_t swapped = sum - (c14 + BODY_REL);
     if (swapped == 0 || swapped > 0x10000u || (swapped & 3))
-        of_fail("unexpected byte-reversal length");
+        shim_fail("unexpected byte-reversal length");
     uint32_t body = LOAD_ADDR + entry_off + BODY_REL;
-    of_puts("os2shim: boot image read, body ");
-    of_puthex(body);
-    of_puts(", ");
-    of_puthex(swapped);
-    of_puts(" bytes to byte-reverse\r\n");
-    of_puts("os2shim: leaving Open Firmware\r\n");
-
-    // From here on nothing of Open Firmware's is used.
-    shim_take_mmu();
-    escc_puts("os2shim: out of Open Firmware\r\n");
+    escc_puts("os2shim: boot image read\r\n");
 
     uint32_t pvr;
     __asm__ volatile("mfpvr %0" : "=r"(pvr));
@@ -455,14 +652,6 @@ void shim_main(void) {
     flush_range(LOAD_ADDR, want);
     flush_range(RESIDUAL_ADDR, rlen);
 
-    // The first 53C825A (Bandit 1 device 17), as the loader will find it: its
-    // registers through its memory BAR at SCSI_MEM_BAR (the loader's base,
-    // remaster patch 90), its I/O BAR at PReP's $20000000 (loader-svc.h),
-    // I/O and memory decode and bus mastering on.
-    cfg_write32(17, 0x14, SCSI_MEM_BAR);
-    cfg_write32(17, 0x10, SCSI_IO_BAR);
-    cfg_write32(17, 0x04, (cfg_read32(17, 0x04) & 0xFFFF) | 0x0007);
-
     // The 54M30 (device 15), where OS/2's hardware database expects a display
     // adapter's 16 MB: PCI $02000000 in PReP's numbering, which the kernel's
     // configuration trap and its $C0000000 -> $80000000 mapping make Bandit's
@@ -472,6 +661,10 @@ void shim_main(void) {
     // DAC through the legacy ports, and an undecoded I/O cycle on Bandit is
     // a machine check.
     cfg_write32(15, 0x04, (cfg_read32(15, 0x04) & 0xFFFF) | 0x0003);
+    // No interrupt line, as on the Network Server, where the 54M30 has none:
+    // a Power Macintosh's Open Firmware writes its slot's Grand Central source
+    // (C1: $19) into the register even though the card has no interrupt pin.
+    cfg_write32(15, 0x3C, cfg_read32(15, 0x3C) & ~0xFFu);
 
     // The loader service at LDRSVC, where patch 90 sends the loader's PC-port,
     // configuration and NVRAM routines.

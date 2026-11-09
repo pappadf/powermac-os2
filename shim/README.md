@@ -1,21 +1,23 @@
 # The shim: OS/2 from Open Firmware
 
-`SHIM.EXE` is a small little-endian PowerPC program. The Apple Network
-Server's Open Firmware 2.26NT loads it from the boot floppy. It hands IBM's
+`SHIM.XCF` is a small little-endian PowerPC program, an XCOFF that Open
+Firmware's own `xcoff-loader` loads from the boot floppy: the Network
+Server's production ROM (1.1.22) or its 2.26NT ROM, or a Power Macintosh
+7500/8500/9500's Open Firmware 1.0.5. It hands IBM's
 boot image the state that IBM's PReP firmware and boot stub would have given
 it. It needs no PReP firmware and no lane-reversing host bridge, only the
 Mac's own little-endian semantics.
 
 It also installs the **loader service** (`ldrsvc.c`) at `$40000`. Patch 90
 turns the boot loader's PC-port, PCI-configuration and NVRAM routines into
-branches to it, and it does those jobs on the Network Server's hardware:
+branches to it, and it does those jobs on the Mac's hardware:
 
 - COM1 is a 16550 emulated on the ESCC.
 - The VGA ports go to Bandit 1's I/O space.
 - PCI configuration uses Bandit configuration cycles.
 - The NVRAM reads as blank.
 
-`make` here builds `build/SHIM.EXE` and `build/os2shim.img`. The top-level
+`make` here builds `build/SHIM.XCF` and `build/os2shim.img`. The top-level
 `make shim` does the same and copies the floppy to `../build/`. See the
 top-level README for booting.
 
@@ -23,11 +25,12 @@ top-level README for booting.
 
 | Step | Where | What |
 |---|---|---|
-| 1 | `os2boot.of` | Reads `SHIM.EXE` off the floppy with `read-blocks` (its sectors are filled in by `mkfloppy.sh`), moves it to load-base, `init-program` (the ROM's PE loader lays it out at 0x50000), `go`. This is the NT boot floppy's own mechanism |
-| 2 | `shim.c` | Through the client interface: `/chosen` `stdout`; RAM from `/memory` `reg`; `claim` 0x700000, 0x800000 and the 0xFF000 page. Then, like PReP firmware working through its boot list, it scans `/bandit/53c825@11/sd@0`–`6` for the first device whose partition table has a type-0x41 PReP boot partition. A fresh install finds the CD (ID 3); an installed system's disk comes first. It reads that partition's header (entry offset and image length at +0x200) and the image, to 0x800000 |
+| 1 | `os2boot.of` | Reads `SHIM.XCF` off the floppy with `read-blocks` (its sectors are filled in by `mkfloppy.sh`), claims and maps its pages through `/chosen`'s `memory` and `mmu` instances, moves it to load-base, and calls the ROM's `xcoff-loader` `init-program` (which lays it out at 0x50000), then `go`. This is the NT boot floppy's mechanism on the production ROM |
+| 2 | `shim.c` | Through the client interface: `/chosen` `stdout`; RAM from `/memory` `reg`; `claim` 0x700000, 0x800000 and the 0xFF000 page |
 | 3 | `start.S` | Leaves Open Firmware: interrupts off, then four BATs: 0–256 MB identity, `$80000000` (Bandit 1's PCI memory, where the SCSI chip's registers are) and `$A0000000` cache-inhibited, and `$F0000000`–`$FFFFFFFF` for the Mac's own I/O (Bandit's ports, Grand Central) |
+| 3a | `shim.c` | **The boot device, without Open Firmware.** The 53C825A is the Network Server's first soldered chip (Bandit 1 device 17) where there is one, otherwise a 53C825A card in the first PCI slot (device 13: a Power Macintosh's A1). The shim sets its BARs and drives it itself, with a small polled SCRIPTS program (select, IDENTIFY, the command, data in, status, message in): a Power Macintosh's Open Firmware has no driver for a card without FCode. Like PReP firmware working through its boot list, it reads sector 0 of SCSI IDs 0–6 for the first partition table with a type-0x41 PReP boot partition. A fresh install finds the CD (ID 3); an installed system's disk comes first. It reads that partition's header (entry offset and image length at +0x200) and the image, to 0x800000 |
 | 4 | `shim.c` | **The stub's work**, reproduced exactly (see below): residual data at 0x700000, its one big-endian store into the image, the per-word byte reversal of its little-endian trampoline, its stack frames (with the image-dependent words computed for the image loaded), cache flushes,  |
-| 4a | `shim.c` | **What PReP firmware leaves for the loader, on this machine's hardware:** the first 53C825A's memory BAR at `$8F000000` and I/O BAR at `$20000000`, with decoding and bus mastering on; the 54M30's display memory at `$82000000`, with its I/O and memory decoders on (the disk's loader programs the VGA DAC); and the loader service copied to `$40000` |
+| 4a | `shim.c` | **What PReP firmware leaves for the loader, on this machine's hardware:** the 53C825A's memory BAR at `$8F000000` and I/O BAR at `$20000000`, with decoding and bus mastering on (step 3a); the 54M30's (device 15: soldered on the Network Server, a card in a Power Macintosh's C1) display memory at `$82000000`, with its I/O and memory decoders on (the disk's loader programs the VGA DAC); and the loader service copied to `$40000` |
 | 5 | `start.S` | The stub's hand-off: segment registers zeroed, I-cache flash-invalidated, ILE on, the registers it leaves (r3 = entry, r4 = swapped length, r14 = residual, r15 = its length, r16 = 5 for Sandalfoot, and so on), `rfi` to 0x85F2A8 with MSR 0x11031 |
 
 ### Reproducing the stub exactly
@@ -72,8 +75,11 @@ native.
 - **CRLF line endings in `os2boot.of`.** This firmware's `\` comment runs to a
   carriage return. With bare line feeds the first comment swallows the whole
   script, and `eval` silently does nothing.
-- **Image base.** 0x600000 and 0x500000 were not claimable for the PE image.
+- **Image base.** 0x600000 and 0x500000 were not claimable for the image.
   0x50000, where the NT veneer runs, is.
+- **XCOFF headers are little-endian.** A firmware running with
+  `little-endian? true` reads them with little-endian loads; the a.out entry
+  is a function descriptor that the loader jumps through.
 - **Property integers are big-endian** in little-endian mode too. A swapped
   `stdout` ihandle means a silent console; swapped `/memory` sizes mean a
   4-byte machine.
@@ -86,12 +92,11 @@ native.
 ## Files
 
 - `start.S`: the entry, the BAT switch and the hand-off.
-- `shim.c`: client-interface calls, the residual data, and the stub's memory
-  effects.
-- `shim.ld`, `mkpe.py`: a flat image at 0x50000, wrapped in the bare PE
-  shape the ROM's pe-loader takes. That is a COFF header at offset 0 with
-  machine 0x01F0, one section at RVA 0, and the entry at RVA 0, the same as
-  the NT veneer.
+- `shim.c`: client-interface calls, the 53C825A reader, the residual data,
+  and the stub's memory effects.
+- `shim.ld`, `mkxcoff.py`: a flat image at 0x50000, wrapped in an XCOFF
+  with one `.text` holding the whole image, an empty `.bss`, and the entry
+  descriptor after the image.
 - `ldrsvc.c`, `ldrsvc.ld`, `ldrsvc_blob.S`: the loader service, linked at
   `$40000` and embedded in the shim.
 - `os2boot.of`, `mkfloppy.sh`: the floppy.

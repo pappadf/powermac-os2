@@ -22,8 +22,8 @@
  *                     there decodes (Bandit would machine-check)
  *   ports $CF8/$CFC   configuration mechanism #1, latched here: bus 0 device n
  *                     is direct-mapped slot n (the same IDSEL)
- *   direct config     slot 12 (the Sandalfoot's 53C810) is the first 53C825A,
- *                     device 17; slot 13 the 54M30, device 15
+ *   direct config     slot 12 (the Sandalfoot's 53C810) is the 53C825A,
+ *                     device 17 or a card's 13; slot 13 the 54M30, device 15
  *   ports $74-$77     PReP NVRAM: reads zero (as kernel-legacy.c's and the
  *                     loader's), writes dropped
  *   ports $60/$64     the 8042, emulated on the ADB keyboard and mouse
@@ -88,25 +88,41 @@ static u32 rw(u32 p, u32 size, int store, u32 v)
 
 /* --- configuration ------------------------------------------------------------ */
 
+/* Device 17 if the Network Server's first 53C825A is there (a Symbios vendor
+ * ID), else 13: a 53C825A card in the first PCI slot (slot_cfg, below).  In
+ * the cave's free space past this file's fault entries (kernel-cave.h). */
+__attribute__((section(".patch.0xF016E540"), noinline, used))
+static u32 scsi_dev(void)
+{
+    *(volatile u32 *)BANDIT1_CFG_ADDR = 1u << 17;
+    eieio();
+    u32 id = *(volatile u32 *)BANDIT1_CFG_DATA;
+    eieio();
+    return (id & 0xFFFF) == 0x1000 ? 17 : 13;
+}
+
 /* A Bandit 1 configuration access; absent devices (and every bus but 0) read all-ones. */
 AT_CFG static u32 cfg(u32 dev, u32 fn, u32 reg, u32 size, int store, u32 v)
 {
     u32 ones = size == 1 ? 0xFF : size == 2 ? 0xFFFF : 0xFFFFFFFF;
     if (dev < 11 || dev > 31)
         return ones;
-    /* A 53C810 has no SCRIPTS RAM: the first 53C825A's BAR2 reads 0 and keeps
-     * its address (the driver would take that RAM for its registers). */
-    if (dev == 17 && (reg & 0xFC) == 0x18)
+    if (dev == 17)
+        dev = scsi_dev();
+    /* A 53C810 has no SCRIPTS RAM: the 53C825A's BAR2 reads 0 and keeps its
+     * address (the driver would take that RAM for its registers).  dev is
+     * slot_cfg's: the 53C825A or the 54M30 (15). */
+    if (dev != 15 && (reg & 0xFC) == 0x18)
         return 0;
     *(volatile u32 *)BANDIT1_CFG_ADDR = (1u << dev) | (fn << 8) | (reg & 0xFC);
     eieio();
     v = rw(BANDIT1_CFG_DATA + (reg & 3), size, store, v);
     if (store)
         return 0;
-    /* The first 53C825A as the 53C810 OS/2 binds its driver to, and the 54M30
-     * as the CL-GD5434, the one Cirrus part OS/2 knows (RDF.STZ's "A81013"). */
-    if ((dev == 17 || dev == 15) && (reg & 0xFC) == 0) {
-        u32 id = dev == 17 ? 0x0001 : 0x00A8;
+    /* The 53C825A as the 53C810 OS/2 binds its driver to, and the 54M30 as
+     * the CL-GD5434, the one Cirrus part OS/2 knows (RDF.STZ's "A81013"). */
+    if ((reg & 0xFC) == 0) {
+        u32 id = dev == 15 ? 0x00A8 : 0x0001;
         if (size == 4)
             v = (v & 0xFFFF) | id << 16;
         else if (size == 2 && (reg & 2))
@@ -116,14 +132,19 @@ AT_CFG static u32 cfg(u32 dev, u32 fn, u32 reg, u32 size, int store, u32 v)
 }
 
 /* A PReP slot's configuration space (direct-mapped slot n, or mechanism #1's
- * device n -- the same IDSEL): slot 12 is the first 53C825A, slot 13 the
- * 54M30, and nothing else answers.  The second 53C825A stays hidden, as it
- * does from the loader: a Sandalfoot has one SCSI controller, and the driver
- * on its IRQ (13, Grand Central source 22) must find the first. */
+ * device n -- the same IDSEL): slot 12 is the 53C825A, slot 13 the 54M30,
+ * and nothing else answers.  The 53C825A is the Network Server's first
+ * soldered chip, device 17, where there is one (a Symbios vendor ID there);
+ * otherwise a 53C825A card in the first PCI slot, device 13 (a Power
+ * Macintosh 7500/8500/9500's A1).  The 54M30 is device 15: soldered there on
+ * the Network Server, a card in a Power Macintosh's C1.  The second 53C825A
+ * stays hidden, as it does from the loader: a Sandalfoot has one SCSI
+ * controller, and the driver on its IRQ (13: Grand Central source 22, or the
+ * slot's 23) must find the first. */
 __attribute__((section(".patch.enable_l2_cache+0x4"), noinline, used))  /* cfg's old room */
 static u32 slot_cfg(u32 slot, u32 fn, u32 reg, u32 size, int store, u32 v)
 {
-    u32 dev = slot == 12 ? 17 : slot == 13 ? 15 : 0;
+    u32 dev = slot == 12 ? 17 : slot == 13 ? 15 : 0;   /* cfg moves 17 to a card's 13 */
     /* PCI memory: PReP's CPU address $C0000000 + m is PCI m; Bandit's
      * $80000000 + m is PCI $80000000 + m.  So a memory BAR, in OS/2's terms,
      * is the chip's less $80000000 (a size probe, all-ones, passes as is). */

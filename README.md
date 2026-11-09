@@ -1,28 +1,36 @@
 # powermac-os2
 
 Remaster IBM's OS/2 Warp (PowerPC Edition) CD so that it installs and boots
-on Apple hardware: patches for the kernel, the boot loader and the drivers,
-plus a small Open Firmware boot program.
+on Apple hardware, an Apple Network Server 500/700 or a Power Macintosh
+7500/8500/9500: patches for the kernel, the boot loader and the drivers, plus
+a small Open Firmware boot program.
 
 OS/2 for the PowerPC was written for IBM's PReP machines. It expects PC
 devices (8259 interrupt controllers, a 16550 serial port, an 8042 keyboard
-controller, an MC146818 clock), PReP's address map and PReP firmware. An
-Apple Network Server has none of these. This project leaves the machine
+controller, an MC146818 clock), PReP's address map and PReP firmware. These
+Macs have none of these. This project leaves the machine
 **unmodified** and changes OS/2 instead. It patches the IBM Microkernel, the
 boot loaders and a few drivers on the CD to use the Mac's own hardware, which
 is Bandit PCI, Grand Central, the ESCC serial port and Cuda/ADB.
 
 ## Status
 
-Tested on an emulated Apple Network Server 500 (the
-[granny-smith](https://github.com/pappadf/granny-smith) emulator, stock
-machine model). Real hardware hasn't been tried yet. What works:
+Tested in the [granny-smith](https://github.com/pappadf/granny-smith)
+emulator:
+- an Apple Network Server 500 (stock machine model), on the production ROM
+  (Open Firmware 1.1.22) and on the 2.26NT ROM;
+- a Power Macintosh 8500 with two PCI cards: a Symbios 53C825A SCSI card in
+  slot A1 and a Cirrus Logic 54M30 VGA card in slot C1. OS/2 has no drivers
+  for the 8500's own MESH, 53C94 or Control video.
+
+Real hardware hasn't been tried yet. What works:
 
 - Open Firmware loads the boot floppy, which starts IBM's boot loader from
   the CD or from an installed disk.
-- The kernel and its drivers come up: SCSI on the first fast/wide bus, the
-  serial console on the Mac's serial port, video on the on-board Cirrus 54M30,
-  and the keyboard and mouse over ADB.
+- The kernel and its drivers come up: SCSI on the 53C825A (the Network
+  Server's first fast/wide bus, or the card), the serial console on the Mac's
+  serial port, video on the Cirrus 54M30 (on-board, or the card), and the
+  keyboard and mouse over ADB.
 - The installer runs (Easy Installation, 2,045 files) onto a disk at SCSI
   ID 6.
 - The installed system boots from that disk to the Workplace Shell, with
@@ -33,9 +41,10 @@ Not working yet:
   53C825A is hidden.
 - **Persistence:** OS/2's NVRAM reads as blank, and the clock runs from the
   time base without being saved.
-- **Other Macs:** only the Network Server 500/700 is handled. Other
-  Bandit/Grand Central Power Macs (7500/8500/9500) are close relatives but
-  are untested.
+- **Other Macs:** only the Network Server 500/700 and the 7500/8500/9500
+  (Bandit and Grand Central) are handled, and of those only the 500 and the
+  8500 have been run. On a 7500/8500/9500 the two cards must be in A1 and
+  C1.
 
 ## What you need
 
@@ -71,7 +80,17 @@ This writes two files:
 `make shim` builds the floppy only, and `make check-iso ISO=...` just checks
 the input image.
 
-## Booting on a Network Server
+## Booting
+
+**The machine.** On a Network Server, nothing to add: the CD and the disk go
+on the first fast/wide bus. On a Power Macintosh 7500/8500/9500, put a
+53C825A SCSI card in slot **A1** (the CD and the disk go on its bus) and a
+Cirrus Logic 54M30 VGA card in slot **C1** (OS/2's screen). Neither card
+needs FCode: the shim drives the SCSI card itself, and Open Firmware's
+console stays on the serial port or the Mac's own video.
+
+**Memory:** at least 64 MB. The settings below put Open Firmware at 63 MB
+(`real-base`), and a machine with less RAM does not come back from the reset.
 
 **The first time**, the floppy puts Open Firmware in little-endian mode by
 itself. On a machine that isn't set up yet, `os2boot.of` sets the same
@@ -91,8 +110,9 @@ typing.
 
 **To install:**
 1. Put the patched CD at SCSI ID 3 and a blank disk at **SCSI ID 6** on the
-   first fast/wide bus. ID 6 matters: IBM's disk loader expects that ID.
-2. Insert the floppy, and at the `0 >` prompt type:
+   53C825A's bus. ID 6 matters: IBM's disk loader expects that ID.
+2. Insert the floppy, and at the `0 >` prompt (on the serial port, ttya, or
+   the Mac's own screen) type:
    ```
    load fd:,\os2boot.of
    load-base loadsize eval
