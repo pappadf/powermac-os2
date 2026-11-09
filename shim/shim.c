@@ -36,11 +36,11 @@
 #include "prep-residual.h"
 #include "../patches/src/loader-svc.h"
 
-// The boot device: the first SCSI ID on the 53C825A (scsi_dev, below) whose
-// partition table has a PReP boot partition (type $41), as PReP firmware's
-// boot list would find it.  A fresh install finds the CD (ID 3); once OS/2
-// is installed, the hard disk the installer partitioned comes first, which
-// is what its "remove the CD-ROM and restart" means.
+// The boot device: the first hard disk on the 53C825A (scsi_dev, below)
+// whose partition table has a PReP boot partition (type $41), else the first
+// such CD.  A fresh install finds the CD (ID 3), the blank disk having no
+// partition table; once OS/2 is installed its hard disk comes first, CD or no
+// CD in the drive.
 #define LOAD_ADDR    0x00800000u // the boot partition, byte 0
 #define LOAD_MAX     0x000C0000u // what is claimed there
 // IBM's stub, wherever the partition header puts its entry: the little-endian
@@ -572,8 +572,14 @@ void shim_main(void) {
     static uint8_t mbr[512];
     uint32_t part_lba = 0, part_len = 0;
     int boot_id = -1;
+    // Hard disks first (512-byte blocks), then CDs: an installed system boots
+    // with the install CD still in its drive, and a blank disk (no partition
+    // table) falls through to the CD.
+    for (int pass = 0; pass < 2 && !part_len; pass++)
     for (int id = 0; id <= 6 && !part_len; id++) {
         if (scsi_read(id, 0, 512, mbr) || mbr[510] != 0x55 || mbr[511] != 0xAA)
+            continue;
+        if ((scsi_block[id] == 2048) != (pass == 1))
             continue;
         for (int e = 0; e < 4; e++) {
             const uint8_t *pe = mbr + 446 + 16 * e;
