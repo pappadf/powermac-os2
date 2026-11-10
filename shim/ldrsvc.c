@@ -19,8 +19,9 @@
 //     everything else  reads all-ones, writes are dropped
 //   PReP direct configuration ($80800000 + offset, through the port helpers or
 //     the SCSI module's own routines): Bandit 1 configuration cycles.  PReP slot 12 (the
-//     Sandalfoot's 53C810) is the first 53C825A, device 17; slot 13 the
-//     54M30, device 15; every other slot is empty.  The chip reports the
+//     Sandalfoot's 53C810) is the 53C825A: the Network Server's first, device 17,
+//     or a card in the first PCI slot, device 13; slot 13 the 54M30, device 15;
+//     every other slot is empty.  The chip reports the
 //     53C810's device ID ($0001), as PReP's would and as the NT HAL reports
 //     it to NT's miniport: the loader accepts nothing else, and the 53C825A
 //     is register-compatible for what it does.  Its command register keeps
@@ -80,10 +81,17 @@ static unsigned cfg_slot(uint32_t off) {
     return 0;
 }
 
+// The 53C825A's device: the Network Server's first soldered chip (17) where
+// there is one, otherwise a card in the first PCI slot (13), as the shim found.
+static unsigned scsi_dev(void) {
+    wr(BANDIT1_CFG_ADDR, 4, 1u << 17);
+    return (rd(BANDIT1_CFG_DATA, 4) & 0xFFFF) == 0x1000 ? 17 : 13;
+}
+
 // A PReP direct-config offset: the Bandit data-port address for it, or 0.
 static uint32_t cfg_select(uint32_t off) {
     unsigned slot = cfg_slot(off);
-    unsigned dev = slot == 12 ? 17 : slot == 13 ? 15 : 0;
+    unsigned dev = slot == 12 ? scsi_dev() : slot == 13 ? 15 : 0;
     if (!dev)
         return 0;
     uint32_t fn = (off >> 8) & 7, reg = off & 0xFF;

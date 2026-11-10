@@ -21,7 +21,7 @@
 #define CAVE_PCI    0xF016DB00   /* 0x300: PCI configuration through Bandit (kernel-pci.c); kernel-trap.c's rw() at +0x240 */
 #define CAVE_LEGACY 0xF016E000   /* 0x5C0: the PC ports the kernel still uses (kernel-legacy.c) */
 #define CAVE_IOMAP  0xF016E400   /* 0x0A0: PReP physical addresses -> the Mac's (kernel-iomap.S) */
-#define CAVE_TRAP   0xF016E4A0   /* 0x120: the trap window's fault entries (kernel-trap.c) */
+#define CAVE_TRAP   0xF016E4A0   /* 0x120: the trap window's fault entries (kernel-trap.c); its scsi_dev() at +0xA0 */
 #define CAVE_LEGACY_DATA 0xF016E600 /* 0x200: its state (the clock index, CMOS RAM) */
 /* kernel-adb.c's entry points (in db_set_spregs, which nothing calls). */
 #define KBD_PORT    0xF01031A0u  /* u32 kbd_port(u32 port, int store, u32 v): ports $60/$64 */
@@ -30,6 +30,7 @@
 /* mot_enable_l2_cache, a blr (kernel-trap.c): its body holds kernel-adb.c's
  * kbd_line, kbd_irq and kbd_tick from +$4, and kernel-ints.c's gc_vector_kbd
  * from +$150. */
+/* kernel-ints.c's irq_gc (16 source masks) at $F016E740. */
 #define CAVE_END    0xF016E800   /* the rest, to $F016F000, is the boot stack */
 #define CAVE_INTS   0xF016DE00   /* 0x800: interrupts through Grand Central (kernel-ints.c; its tables at +0x7C0) */
 

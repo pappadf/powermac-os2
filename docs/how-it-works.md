@@ -5,7 +5,15 @@ on a PCI bus with an ISA bridge, PC devices behind it, and PReP firmware that
 hands the boot loader a residual-data description of the machine. This
 project makes it run on an Apple Network Server 500/700. That machine has a
 604, two Bandit PCI bridges, a Grand Central I/O controller, two 53C825A SCSI
-chips, a Cirrus 54M30 video chip and Open Firmware 2.26NT.
+chips, a Cirrus 54M30 video chip and Open Firmware (1.1.22 in production).
+
+A Power Macintosh 7500/8500/9500 is the same board family: Bandit, Grand
+Central, Cuda and the ESCC at the same addresses, and Open Firmware 1.0.5.
+What it lacks is OS/2-usable SCSI and video, so it gets the Network Server's
+two chips as PCI cards: a 53C825A card in slot A1 (Bandit 1 device 13, Grand
+Central source 23, exactly the Network Server's slot 1) and a 54M30 card in
+C1 (device 15, where the Network Server solders its own). Everything below
+finds the 53C825A at device 17 if the Network Server's is there, else at 13.
 
 The machine is not changed. Each piece of PReP hardware OS/2 uses is answered
 on the OS/2 side instead.
@@ -13,15 +21,17 @@ on the OS/2 side instead.
 ## The boot path
 
 1. **Open Firmware** loads `os2boot.of` from the floppy, which loads
-   `SHIM.EXE` (`shim/`).
+   `SHIM.XCF` (`shim/`) through the ROM's own `xcoff-loader`.
 2. **The shim:**
+   - leaves Open Firmware, and drives the 53C825A itself (Open Firmware on a
+     Power Macintosh has no driver for a SCSI card without FCode);
    - finds the first SCSI device with a PReP boot partition (the CD at ID 3,
      or an installed disk);
    - reads IBM's boot image;
    - does what PReP firmware and IBM's boot stub would have done: residual
      data for an IBM "Sandalfoot", the stub's memory effects, and the
      hand-off registers;
-   - assigns the first 53C825A's and the 54M30's BARs, and switches on their
+   - assigns the 53C825A's and the 54M30's BARs, and switches on their
      decoders;
    - installs a **loader service** at `$40000`;
    - jumps to the loader.
@@ -67,8 +77,8 @@ Behind the trap:
 - **Ports `$3B0`–`$3DF`** (VGA) go to Bandit 1's I/O space, except
   `$3BC`–`$3BF`.
 - **PCI configuration** goes to Bandit 1:
-  - PReP slot 12 is the first 53C825A, presented as a 53C810 (which has no
-    third BAR).
+  - PReP slot 12 is the 53C825A (device 17, or a card's 13), presented as
+    a 53C810 (which has no third BAR).
   - Slot 13 is the 54M30, presented as a CL-GD5434 (device ID and CR27).
   - Memory BARs are translated between PReP's numbering (CPU `$C0000000` +
     m is PCI m) and Bandit's (CPU and PCI `$80000000` + m).
@@ -80,7 +90,8 @@ Behind the trap:
 
 OS/2 keeps its 8259-style IRQ numbers, and a table maps them onto Grand
 Central sources:
-- IRQ 13 is the first 53C825A.
+- IRQ 13 is the 53C825A: source 22 for the Network Server's first chip,
+  source 23 for a card in the first slot. Only one is ever there.
 - IRQ 1 and 12 are the VIA (Cuda), for the emulated keyboard and mouse.
 
 Grand Central runs in clear mode 1, so edge sources latch. Level IRQs follow

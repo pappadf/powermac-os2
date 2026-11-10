@@ -1,7 +1,9 @@
 \ SPDX-License-Identifier: GPL-2.0-only
 \ os2shim -- boot OS/2 Warp (PowerPC Edition) on an Apple Network Server 500/700
+\ or a Power Macintosh 7500/8500/9500
 \
-\ With the OS/2 PowerPC CD 1 at SCSI ID 3 on the first fast/wide bus:
+\ With the OS/2 PowerPC CD 1 at SCSI ID 3 on the 53C825A (the Network Server's
+\ first fast/wide bus, or a 53C825A card in a Power Macintosh's slot A1):
 \     load fd:,\os2boot.of
 \     load-base loadsize eval
 \ On a machine not yet in little-endian mode the script sets the variables
@@ -9,11 +11,21 @@
 \ boot-device at itself and resets; the firmware then boots this script on its
 \ own, and every later power-on does the same while the floppy is in.
 \
-\ This reads SHIM.EXE off this floppy into load-base, lays it out with the ROM's
-\ pe-loader and starts it.  @SECTORS@ is filled in by mkfloppy.sh.
+\ This reads SHIM.XCF off this floppy into load-base, lays it out with the ROM's
+\ xcoff-loader and starts it.  @SECTORS@ is filled in by mkfloppy.sh.
 
-0 value os2-pe
+0 value os2-xl
 0 value os2-fd
+
+\ Claim and map pages virtual == physical through /chosen's memory and mmu
+\ instances, as a client program would.  The claim is bookkeeping and may fail
+\ where the firmware holds the page already; the map goes through regardless.
+" /chosen" find-package drop value os2-chosen
+: os2-ih ( name$ -- ihandle ) os2-chosen get-package-property drop decode-int nip nip ;
+" memory" os2-ih value os2-mem
+" mmu" os2-ih value os2-mmu
+: os2-claim ( addr size -- ) 0 " claim" os2-mem ['] $call-method catch if 2drop 2drop 2drop else drop then ;
+: os2-map ( addr size -- ) 2dup os2-claim over swap 0 " map" os2-mmu $call-method ;
 
 \ Running little-endian (a stored 1 reads back low byte first), with the
 \ memory layout the shim is laid out for.
@@ -33,15 +45,15 @@
 ;
 
 : os2-boot
-   " /packages/pe-loader" open-dev to os2-pe
-   3D00000 @MAPLEN@ " map-space" os2-pe $call-method
+   " /packages/xcoff-loader" open-dev to os2-xl
+   3D00000 @MAPLEN@ os2-map
    " /bandit/gc/swim3" open-dev to os2-fd
 @READS@
    os2-fd close-dev
-   3E00000 @MAPLEN@ " map-space" os2-pe $call-method
+   3E00000 @MAPLEN@ os2-map
    3D00000 3E00000 @SIZE@ move
    @SIZE@ to loadsize
-   init-program
+   " init-program" os2-xl $call-method
    ." os2shim: starting" cr
    go
 ;

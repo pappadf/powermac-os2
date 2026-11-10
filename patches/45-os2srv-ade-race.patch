@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The OS/2 server registers with ADE (the device-event server) for device
+# notifications at startup.  ADEInit starts the listener thread first
+# (os2_start_server_thread -> ReceiveADENotify -> ADE_ListenNotify) and then
+# registers from the main thread (ADE_RequestNotify).  Both paths create the
+# notification port on demand: "if (notify_port == 0) ADEMakeNotifyPort()".
+# Nothing orders them, and ADEMakeNotifyPort blocks in IPC before it stores
+# the port, so the listener can run inside that window, see 0, and make a
+# second port.  ADE is then given one port while the listener receives on
+# the other.
+#
+# The first device event (a CD drive with no disc reporting "not ready")
+# makes ADE call the registered port and wait for a reply that never comes.
+# The file system is waiting on ADE, so everything that touches the file
+# system hangs: Presentation Manager never reads OS2.INI and the boot stops
+# on a blank screen before the desktop.  Whether the race is lost depends
+# only on timing; on a Power Macintosh 8500 with a single empty CD drive it
+# is lost on every boot.
+#
+# ADEInit rewritten in place (same 28 instructions): register first, which
+# makes the port and stores it, then start the listener, which finds the
+# port already made.  The return value was ADE_RequestNotify's and is unused
+# by the only caller.
+#
+#     mflr 0; stwu 1,-144(1); stw 0,148(1); stw 30,20(1); stw 31,16(1)
+#     bl <got>; mflr 31
+#     addi 30,1,24; ori 3,30,0; li 4,0; li 5,120; bl memset
+#     li 12,-1; stw 12,24(1); ori 3,30,0; bl ADE_RequestNotify
+#     lwz 12,788(31); lwz 3,0(12); lwz 12,792(31); addi 5,12,0; li 4,0
+#     bl os2_start_server_thread
+#     lwz 31,16(1); lwz 30,20(1); addi 1,1,144; lwz 0,4(1); mtlr 0; blr
+file /OS2/OS2SRV
+patch-sym ADEInit a602087c70ff2194940001901400c1931000e193a9e60648a602e87f14039f8100006c8018039f810000ac3800008038055903481800c13b0000c363000080387800a038a1f50648ffff8039180081910000c3631d2f06481000e1831400c1839000213804000180a603087c2000804e a602087c70ff2194940001901400c1931000e193a9e60648a602e87f1800c13b0000c363000080387800a038b9f50648ffff8039180081910000c363352f064814039f8100006c8018039f810000ac3800008038e15803481000e1831400c1839000213804000180a603087c2000804e
