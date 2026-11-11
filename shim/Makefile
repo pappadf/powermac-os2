@@ -16,7 +16,7 @@ $(B):
 $(B)/start.o: start.S | $(B)
 	$(CLANG) $(TARGET) -x assembler-with-cpp -c $< -o $@
 # The loader service: linked where the loader calls it, embedded in the shim.
-$(B)/ldrsvc.o: ldrsvc.c ../patches/src/loader-svc.h | $(B)
+$(B)/ldrsvc.o: ldrsvc.c scsi.c ../patches/src/loader-svc.h | $(B)
 	$(CLANG) $(CFLAGS) -c $< -o $@
 $(B)/ldrsvc.elf: $(B)/ldrsvc.o ldrsvc.ld
 	$(LLD) -T ldrsvc.ld -static -nostdlib -o $@ $(B)/ldrsvc.o
@@ -24,7 +24,7 @@ $(B)/ldrsvc.bin: $(B)/ldrsvc.elf
 	$(OBJCOPY) -O binary $< $@
 $(B)/ldrsvc_blob.o: ldrsvc_blob.S $(B)/ldrsvc.bin
 	$(CLANG) $(TARGET) -c -DBLOB=\"$(B)/ldrsvc.bin\" $< -o $@
-$(B)/shim.o: shim.c prep-residual.h ../patches/src/loader-svc.h | $(B)
+$(B)/shim.o: shim.c scsi.c control.c prep-residual.h ../patches/src/loader-svc.h | $(B)
 	$(CLANG) $(CFLAGS) -c $< -o $@
 $(B)/shim.elf: $(B)/start.o $(B)/shim.o $(B)/ldrsvc_blob.o shim.ld
 	$(LLD) -T shim.ld -static -nostdlib -o $@ $(B)/start.o $(B)/shim.o $(B)/ldrsvc_blob.o

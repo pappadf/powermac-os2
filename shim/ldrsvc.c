@@ -48,7 +48,14 @@ __asm__(".section .text.entry, \"ax\"\n"
         "  b svc_cfg_rd32\n"
         "  b svc_cfg_wr16\n"
         "  b svc_cfg_wr32\n"
-        "  b svc_nvram_rd\n");
+        "  b svc_nvram_rd\n"
+        "  b svc_scsi_init\n"
+        "  b svc_scsi_probe\n"
+        "  b svc_scsi_rw\n"
+        "  .org 0x40\n"
+        "  .long 0\n"   // LDRSVC_SCSI_CHIP, written by the shim
+        "  .long 0\n"   // LDRSVC_VGA: a 54M30 decodes the VGA ports
+        "  .long 255\n"); // LDRSVC_BOOT_DISK
 
 static inline void eieio(void) {
     __asm__ volatile("eieio" ::: "memory");
@@ -67,6 +74,8 @@ static inline void wr(uint32_t a, unsigned size, uint32_t v) {
         *(volatile uint32_t *)a = v;
     eieio();
 }
+#define LDRSVC_VGA (LDRSVC + 0x44)
+
 static uint32_t ones(unsigned size) {
     return size == 1 ? 0xFFu : size == 2 ? 0xFFFFu : 0xFFFFFFFFu;
 }
@@ -227,7 +236,7 @@ static int classify(uint32_t addr, uint32_t *x) {
 static uint32_t port_in(uint32_t port, unsigned size) {
     if (port >= 0x3F8 && port <= 0x3FF)
         return com1_in(port - 0x3F8);
-    if (port >= 0x3B0 && port <= 0x3DF && (port & ~3u) != 0x3BC)
+    if (port >= 0x3B0 && port <= 0x3DF && (port & ~3u) != 0x3BC && *(volatile uint32_t *)LDRSVC_VGA)
         return rd(BANDIT1_IO + port, size);
     if (port == 0x60 || port == 0x64)
         return 0;
@@ -237,7 +246,7 @@ static uint32_t port_in(uint32_t port, unsigned size) {
 static void port_out(uint32_t port, unsigned size, uint32_t v) {
     if (port >= 0x3F8 && port <= 0x3FF)
         com1_out(port - 0x3F8, (uint8_t)v);
-    else if (port >= 0x3B0 && port <= 0x3DF && (port & ~3u) != 0x3BC)
+    else if (port >= 0x3B0 && port <= 0x3DF && (port & ~3u) != 0x3BC && *(volatile uint32_t *)LDRSVC_VGA)
         wr(BANDIT1_IO + port, size, v);
 }
 
@@ -284,4 +293,103 @@ uint32_t svc_in16(uint32_t a) {
 }
 uint32_t svc_in32(uint32_t a) {
     return io_in(a, 4);
+}
+
+// --- the SCSI module's disk routines ----------------------------------------------
+//
+// The loader keeps a 16-byte record per unit (0 the hard disk, 1 the CD):
+// +0 the device type, +1 its SCSI ID, +4 1, +8 its last block, +12 its block
+// size.  A transfer request is five words: the unit, the operation (8 read, 9
+// write), the first block, the buffer and the block count.  The module's own
+// routines fill and serve them through its SCRIPTS driver for the 53C810;
+// these do the same through scsi.c, on whichever chip the shim found.
+
+static uint8_t scsi_area[1024] __attribute__((aligned(32)));
+#define SCSI_WORK ((uint32_t)scsi_area)
+#include "scsi.c"
+
+struct unit {
+    uint8_t type, id, pad[2];
+    uint32_t one, last, bs;
+};
+
+uint32_t svc_scsi_init(void) {
+    scsi_chip = *(volatile uint32_t *)LDRSVC_SCSI_CHIP;
+    scsi_init();
+    return scsi_chip != 0;
+}
+
+// One target: ready (a CD may still be spinning up), the device type the unit
+// wants (0 disk, 5 CD-ROM), and its capacity.
+static int probe_id(struct unit *u, int id, unsigned type) {
+    static const uint8_t tur[6] = {0x00, 0, 0, 0, 0, 0};
+    static const uint8_t inq[6] = {0x12, 0, 0, 0, 36, 0};
+    int st = -2;
+    for (int tries = 0; tries < 20 && st != 0; tries++) {
+        st = scsi_do(id, tur, 6, 0, 0, 0);
+        if (st == -1)
+            return 0;
+    }
+    if (st != 0)
+        return 0;
+    if (scsi_do(id, inq, 6, SCSI_SENSE, 36, 0) != 0)
+        return 0;
+    if ((*(volatile uint8_t *)SCSI_SENSE & 0x1F) != type)
+        return 0;
+    uint32_t last, bs;
+    if (scsi_capacity(id, &last, &bs) || !bs)
+        return 0;
+    u->type = (uint8_t)type;
+    u->id = (uint8_t)id;
+    u->pad[0] = 0;
+    u->last = last;
+    u->bs = bs;
+    return 1;
+}
+
+// The unit's device: at `id`, or (id 255) the highest ID that has one.  The
+// disk's loader (FAT_BL.HD) asks for the hard disk at ID 6, a Sandalfoot's;
+// it is the disk the shim booted from, wherever that is (a Power
+// Macintosh's internal bay is ID 0).
+uint32_t svc_scsi_probe(uint32_t unit, uint32_t id, uint32_t type, struct unit *units) {
+    struct unit *u = &units[unit];
+    uint32_t boot = *(volatile uint32_t *)LDRSVC_BOOT_DISK;
+    if (type == 0 && boot < 7)
+        id = boot;
+    u->id = (uint8_t)id;
+    if (id != 255)
+        return (uint32_t)probe_id(u, (int)id, type);
+    for (int i = 6; i >= 0; i--)
+        if (probe_id(u, i, type))
+            return 1;
+    return 0;
+}
+
+// BOOT.CFG names the boot disk "devices/scsi0?" (remaster patch 50): the "?"
+// becomes the ID of the disk the shim booted from, as the disk's loader reads
+// the file in.
+static void name_boot_disk(uint8_t *p, uint32_t n) {
+    static const char key[] = "devices/scsi0?";
+    uint32_t boot = *(volatile uint32_t *)LDRSVC_BOOT_DISK;
+    if (boot > 6)
+        return;
+    for (uint32_t i = 0; i + sizeof key - 1 <= n; i++) {
+        uint32_t k = 0;
+        while (k < sizeof key - 1 && p[i + k] == (uint8_t)key[k])
+            k++;
+        if (k == sizeof key - 1)
+            p[i + k - 1] = (uint8_t)('0' + boot);
+    }
+}
+
+uint32_t svc_scsi_rw(const uint32_t *req, struct unit *units) {
+    const struct unit *u = &units[req[0]];
+    uint32_t lba = req[2], buf = req[3], n = req[4];
+    if (lba > u->last || !u->bs)
+        return 0; // nothing past its last block
+    if (scsi_rw10(u->id, lba, n, u->bs, buf, req[1] == 9))
+        return 0;
+    if (req[1] == 8 && u->type == 0)
+        name_boot_disk((uint8_t *)buf, n * u->bs);
+    return 1;
 }

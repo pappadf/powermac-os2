@@ -54,6 +54,8 @@ on the OS/2 side instead.
 | PReP's PCI I/O window (`$A0000000`) and memory window (`$C0000000`) | Bandit 1's memory window | patch 95 |
 | Spread ISA ports and direct configuration, from any task | A trap that emulates them | patch 97 |
 | 8042 keyboard and mouse controller | Cuda and ADB | patch 98 |
+| A 53C810, on a Power Macintosh without a SCSI card | MESH, behind a stand-in 53C810 | the shim, the loader service, patches 96 and 97 |
+| A PCI display adapter, on a Power Macintosh without a card | Control, through a shadow frame buffer | the shim, patches 57, 95 and 97 |
 | PReP's DMA offset (bus address = `$80000000` + physical) | None: Bandit's bus addresses are physical | patches 85, 90 and 97 |
 
 ### The trap (patch 97)
@@ -132,6 +134,56 @@ state:
   driver is polling for.
 - **Mouse packets** are queued whole, and only while the mouse interrupt is
   enabled, so they can't hold up keystrokes during boot.
+
+## A Power Macintosh without cards
+
+A stock 7500/8500/9500 has neither chip. Its internal SCSI bus is MESH, a
+cell in Grand Central, and its display is Control, behind the Chaos bridge.
+OS/2 has drivers for neither, so each is put behind something OS/2 already
+knows, and only the code that touches the chip changes.
+
+**SCSI on MESH.**
+- **Before the kernel.** `shim/scsi.c` is one polled driver for both chips,
+  used by the shim and by the loader service. On MESH it sends the message,
+  command and status bytes through MESH's FIFO and moves the data with DBDMA
+  channel 10, as Linux and MkLinux do. Patch 90 sends the loader's three disk
+  routines (set the chip up, probe a target, read or write blocks) to it, on
+  every machine.
+- **The device.** With no 53C825A, the trap presents a 53C810 in slot 12.
+  The hardware database binds the NCR driver to it, as anywhere else. Its one
+  BAR, 256 bytes of I/O at PReP `$80FFF000`, is a page of the trap window.
+  There MESH's sixteen registers keep their offsets, and DBDMA channel 10's
+  control, status and command pointer take three of the words between them.
+- **The driver.** Patch 96 changes the NCR driver only where it touches the
+  chip, and only when the chip is MESH (its range is at `$80FFF000`). The
+  chip resets become MESH's and a SCSI bus reset. Starting a command block
+  hands it to a worker thread, which takes the place of the interrupt
+  thread. The worker runs each command start to finish, polled. It then
+  finishes the block the way the interrupt thread finishes a SCRIPTS
+  completion. MESH's interrupt stays masked.
+
+**The display on Control.**
+- **The mode.** The shim sets 640x480 in 8-bit colour: the ROM's 640x480
+  raster, the pixel clock over Cuda's I²C, the VRAM banks probed as Linux
+  probes them.
+- **The byte order.** Chaos, unlike Bandit, doesn't reverse its byte lanes.
+  From the CPU's little-endian mode, each aligned 8 bytes of an image would
+  reach VRAM mirrored.
+- **The shadow.** So OS/2 draws into a shadow frame buffer: 1 MB of RAM at
+  `$3F00000`, the top megabyte of the 64 MB OS/2 needs. The residual data
+  tells OS/2 its RAM ends there: its kernel sizes memory from the total and
+  ignores holes in the segment list. The trap presents
+  Control in slot 13, with its own ID, and with the shadow as its memory BAR
+  (PReP `$CE000000`, patch 95).
+- **The copy.** On every clock tick, `kernel-video.c` compares a band of
+  scan lines with what it last sent. It copies what changed to VRAM, each
+  8 bytes byte-reversed, through data BAT 3, which the kernel doesn't use.
+- **The palette.** OS/2 sets it through the VGA DAC ports, which the trap
+  turns into the RaDACal's colour table.
+- **OS/2's side.** Patch 57 gives the hardware database a stanza for
+  Control and VIDEOPMI.LST an entry for it. It adds `CONTROL.PMI`, which
+  leaves the mode as the shim set it. No accelerated GRADD claims its OEM
+  string, so the generic one draws.
 
 ## Where the code goes
 

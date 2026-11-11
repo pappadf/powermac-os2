@@ -19,11 +19,15 @@
  *
  *   ports $3B0-$3DF   VGA, on Bandit 1's PCI I/O space (the 54M30); not $3BC-$3BF,
  *                     the monochrome adapter's printer port, which nothing
- *                     there decodes (Bandit would machine-check)
+ *                     there decodes (Bandit would machine-check).  Without
+ *                     a 54M30, only the DAC: the on-board display's palette
  *   ports $CF8/$CFC   configuration mechanism #1, latched here: bus 0 device n
  *                     is direct-mapped slot n (the same IDSEL)
  *   direct config     slot 12 (the Sandalfoot's 53C810) is the 53C825A,
- *                     device 17 or a card's 13; slot 13 the 54M30, device 15
+ *                     device 17 or a card's 13; slot 13 the 54M30, device 15.
+ *                     A Power Macintosh without them gets stand-ins: a
+ *                     53C810 for its MESH, Control for its on-board display
+ *   $80FFF000         the stand-in 53C810's registers: MESH and DBDMA
  *   ports $74-$77     PReP NVRAM: reads zero (as kernel-legacy.c's and the
  *                     loader's), writes dropped
  *   ports $60/$64     the 8042, emulated on the ADB keyboard and mouse
@@ -89,16 +93,118 @@ static u32 rw(u32 p, u32 size, int store, u32 v)
 /* --- configuration ------------------------------------------------------------ */
 
 /* Device 17 if the Network Server's first 53C825A is there (a Symbios vendor
- * ID), else 13: a 53C825A card in the first PCI slot (slot_cfg, below).  In
- * the cave's free space past this file's fault entries (kernel-cave.h). */
+ * ID), else 13 if a card is in the first PCI slot (slot_cfg, below), else 0:
+ * no 53C825A at all.  In the cave's free space past this file's fault
+ * entries (kernel-cave.h). */
 __attribute__((section(".patch.0xF016E540"), noinline, used))
 static u32 scsi_dev(void)
 {
-    *(volatile u32 *)BANDIT1_CFG_ADDR = 1u << 17;
+    for (u32 dev = 17; dev >= 13; dev -= 4) {
+        *(volatile u32 *)BANDIT1_CFG_ADDR = 1u << dev;
+        eieio();
+        u32 id = *(volatile u32 *)BANDIT1_CFG_DATA;
+        eieio();
+        if ((id & 0xFFFF) == 0x1000)
+            return dev;
+    }
+    return 0;
+}
+
+/* Stand-ins for the two PReP slots a Power Macintosh 7500/8500/9500 without
+ * cards has no chip for.  Each is a configuration header in the cave's free
+ * end (kernel-cave.h); a BAR write keeps only the address bits, so a size
+ * probe reads the size back.
+ *
+ * Slot 12 without a 53C825A: a 53C810, so that OS/2's hardware database
+ * binds the NCR driver as on any other machine, and the driver's MESH layer
+ * (dd-scsi-mesh.c) drives the machine's own bus instead.  Its one BAR, 256
+ * bytes of I/O at PCI $00FFF000 (PReP $80FFF000, the top of PReP's direct
+ * configuration window, which no slot uses), is a trap-window page like the
+ * rest of that window, and mesh_reg below turns it into Grand Central's MESH
+ * and DBDMA channel 10.
+ *
+ * Slot 13 without a 54M30: the board's Control (its own ID), so that OS/2's
+ * video server finds a display adapter (RDF.STZ, VIDEOPMI.LST, CONTROL.PMI).
+ * Its memory BAR, 1 MB at Bandit $8E000000 (PCI $0E000000 and PReP
+ * $CE000000 to OS/2), is the shadow frame buffer in RAM (kernel-iomap.S),
+ * which kernel-video.c copies to the screen. */
+__attribute__((section(".patch.0xF016E780"), used)) static u32 fake_810[16] = {
+    0x00011000u,          /* Symbios 53C810 */
+    0x02000007u,          /* I/O, memory, bus master; medium DEVSEL */
+    0x01000002u,          /* SCSI controller, revision 2 */
+    0, 0x00FFF001u, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0x0000010Du,          /* INTA, line 13 */
+};
+__attribute__((section(".patch.0xF016E7C0"), used)) static u32 fake_control[16] = {
+    0x0003106Bu,          /* Apple Control */
+    0x02000002u,          /* memory; medium DEVSEL */
+    0x03000000u,          /* VGA-compatible display controller */
+    0, 0x8E000000u,
+};
+
+/* A stand-in's configuration register: read, or (a BAR) written.  In
+ * l2_cache_dpe's dead body. */
+__attribute__((section(".patch.l2_cache_dpe+0x8"), noinline, used))
+static u32 fake(u32 *img, u32 reg, u32 size, int store, u32 v)
+{
+    if (store) {
+        if (reg == 0x10 && size == 4)
+            img[4] = img[4] & 1 ? (v & ~0xFFu) | 1u : v & ~0xFFFFFu;   /* 256 bytes of I/O, 1 MB of memory */
+        return 0;
+    }
+    u32 w = reg < 0x40 ? img[reg >> 2] >> 8 * (reg & 3) : 0;
+    return size == 1 ? w & 0xFF : size == 2 ? w & 0xFFFF : w;
+}
+
+/* Is Bandit 1 device n empty? */
+__attribute__((section(".patch.trace_setup+0x8"), noinline, used))
+static u32 absent(u32 n)
+{
+    *(volatile u32 *)BANDIT1_CFG_ADDR = 1u << n;
     eieio();
     u32 id = *(volatile u32 *)BANDIT1_CFG_DATA;
     eieio();
-    return (id & 0xFFFF) == 0x1000 ? 17 : 13;
+    return id == 0xFFFFFFFFu;
+}
+
+/* slot_cfg's device: the device to address (17 becomes the 53C825A that is
+ * there, scsi_dev), or a stand-in's header. */
+__attribute__((section(".patch.trace_setup+0x8"), noinline, used))
+static u32 stand_in(u32 dev)
+{
+    if (dev == 17 && !(dev = scsi_dev()))
+        return (u32)fake_810;
+    if (dev == 15 && absent(15))
+        return (u32)fake_control;
+    return dev;
+}
+
+/* The 53C825A as the 53C810 OS/2 binds its driver to, and the 54M30 as the
+ * CL-GD5434, the one Cirrus part OS/2 knows (RDF.STZ's "A81013"): the device
+ * ID in a read of register 0.  In l2_cache_present, which nothing calls. */
+__attribute__((section(".patch.l2_cache_present"), noinline, used))
+static u32 cfg_id(u32 dev, u32 reg, u32 size, u32 v)
+{
+    u32 id = dev == 15 ? 0x00A8 : 0x0001;
+    if (size == 4)
+        v = (v & 0xFFFF) | id << 16;
+    else if (size == 2 && (reg & 2))
+        v = id;
+    return v;
+}
+
+/* The stand-in 53C810's registers (its trap-window page, $80FFF000): MESH's
+ * sixteen byte registers where they are, on 16-byte centres, and in three of
+ * the words between them DBDMA channel 10's control (+4), status (+8) and
+ * command pointer (+$C).  The driver maps one page for its 256 bytes, and
+ * MESH and the DMA channel are two pages of Grand Central. */
+__attribute__((section(".patch.pic_resume+0x28"), noinline, used))  /* past kernel-ints.c's pic_resume */
+static u32 mesh_reg(u32 o, u32 size, int store, u32 v)
+{
+    u32 k = o & 0xF;
+    if (o > 0xFF || (k & 3) || (k && size != 4))
+        return 0xFFFFFFFFu;
+    return rw(k ? GC_BASE + 0x8A00 + (k == 4 ? 0 : k == 8 ? 4 : 0xC) : GC_BASE + 0x18000 + o, size, store, v);
 }
 
 /* A Bandit 1 configuration access; absent devices (and every bus but 0) read all-ones. */
@@ -107,8 +213,8 @@ AT_CFG static u32 cfg(u32 dev, u32 fn, u32 reg, u32 size, int store, u32 v)
     u32 ones = size == 1 ? 0xFF : size == 2 ? 0xFFFF : 0xFFFFFFFF;
     if (dev < 11 || dev > 31)
         return ones;
-    if (dev == 17)
-        dev = scsi_dev();
+    if ((dev = stand_in(dev)) > 31)
+        return fake((u32 *)dev, reg, size, store, v);
     /* A 53C810 has no SCRIPTS RAM: the 53C825A's BAR2 reads 0 and keeps its
      * address (the driver would take that RAM for its registers).  dev is
      * slot_cfg's: the 53C825A or the 54M30 (15). */
@@ -117,18 +223,9 @@ AT_CFG static u32 cfg(u32 dev, u32 fn, u32 reg, u32 size, int store, u32 v)
     *(volatile u32 *)BANDIT1_CFG_ADDR = (1u << dev) | (fn << 8) | (reg & 0xFC);
     eieio();
     v = rw(BANDIT1_CFG_DATA + (reg & 3), size, store, v);
-    if (store)
-        return 0;
-    /* The 53C825A as the 53C810 OS/2 binds its driver to, and the 54M30 as
-     * the CL-GD5434, the one Cirrus part OS/2 knows (RDF.STZ's "A81013"). */
-    if ((reg & 0xFC) == 0) {
-        u32 id = dev == 15 ? 0x00A8 : 0x0001;
-        if (size == 4)
-            v = (v & 0xFFFF) | id << 16;
-        else if (size == 2 && (reg & 2))
-            v = id;
-    }
-    return v;
+    if (store || (reg & 0xFC))
+        return v & -(u32)!store;
+    return cfg_id(dev, reg, size, v);
 }
 
 /* A PReP slot's configuration space (direct-mapped slot n, or mechanism #1's
@@ -163,10 +260,51 @@ static u32 slot_cfg(u32 slot, u32 fn, u32 reg, u32 size, int store, u32 v)
 
 /* --- PReP I/O ------------------------------------------------------------------- */
 
+/* VGA's ports.  With the 54M30 (Bandit 1 device 15), Bandit 1's PCI I/O space,
+ * where it decodes them, with CR27, the die's ID, as the 5434's ($A8): a
+ * Cirrus driver checks it.  Without one, the board's Control has no VGA, and
+ * only the palette means anything: the DAC's write index ($3C8) and data
+ * ($3C9, red, green, blue, 6 bits each) become the RaDACal's colour table
+ * (Grand Central + $1B000: its index at +0, the table at +$30), and the
+ * input status ($3DA) alternates, for a driver that waits for a retrace.
+ * Nothing else answers. */
+#define RADACAL NS_IO(0xF301B000u)
+__attribute__((section(".patch.0xF016E658"), used)) static unsigned char dac[4];   /* index, byte, $3DA */
+__attribute__((section(".patch.trace_setup+0x8"), noinline, used))
+static u32 vga(u32 port, u32 size, int store, u32 v)
+{
+    if (!absent(15)) {
+        if ((port & ~0x20) == 0x3B4 && store)
+            crtc = v & 0xFF;
+        if ((port & ~0x20) == 0x3B5 && !store && size == 1 && crtc == 0x27)
+            return 0xA8;
+        return rw(BANDIT1_IO + port, size, store, v);
+    }
+    if (port == 0x3DA && !store)
+        return dac[2] ^= 0x09;
+    if (!store)
+        return 0xFFFFFFFFu;
+    if (port == 0x3C8) {
+        dac[0] = (unsigned char)v;
+        dac[1] = 0;
+    } else if (port == 0x3C9) {
+        if (!dac[1])
+            rw(RADACAL, 1, 1, dac[0]);
+        rw(RADACAL + 0x30, 1, 1, (v & 0x3F) << 2 | (v & 0x3F) >> 4);
+        if (++dac[1] == 3) {
+            dac[1] = 0;
+            dac[0]++;
+        }
+    }
+    return 0;
+}
+
 AT_IO static u32 prep_io(u32 a, u32 size, int store, u32 v)
 {
     u32 off = a - 0x80000000u;
     u32 ones = size == 1 ? 0xFF : size == 2 ? 0xFFFF : 0xFFFFFFFF;
+    if (off - 0x00FFF000u < 0x1000u)          /* the stand-in 53C810 (above) */
+        return mesh_reg(off & 0xFFF, size, store, v) & ones;
     if (off >= 0x00800000u) {                 /* direct configuration */
         off -= 0x00800000u;
         u32 slot = 0;
@@ -178,14 +316,8 @@ AT_IO static u32 prep_io(u32 a, u32 size, int store, u32 v)
         return slot_cfg(slot, (off >> 8) & 7, off & 0xFF, size, store, v);
     }
     u32 port = ((off >> 7) & 0xFFE0) | (off & 0x1F);   /* the spread map */
-    if (port - 0x3B0 < 0x30 && port - 0x3BC > 3) {   /* VGA, not the MDA printer port $3BC */
-        /* CR27, the die's ID, as the 5434's ($A8): a Cirrus driver checks it. */
-        if ((port & ~0x20) == 0x3B4 && store)
-            crtc = v & 0xFF;
-        if ((port & ~0x20) == 0x3B5 && !store && size == 1 && crtc == 0x27)
-            return 0xA8;
-        return rw(BANDIT1_IO + port, size, store, v);
-    }
+    if (port - 0x3B0 < 0x30 && port - 0x3BC > 3)    /* VGA, not the MDA printer port $3BC */
+        return vga(port, size, store, v) & ones;
     if ((port & ~4u) == 0x60)                  /* the 8042: ADB, through Cuda (kernel-adb.c) */
         return ((u32 (*)(u32, int, u32))KBD_PORT)(port, store, v);
     if ((port & ~3u) == 0x74)
@@ -358,6 +490,12 @@ __asm__(
     /* l2_cache_size (pmc_items_init's question): no L2 cache.  prep_io follows. */
     "  .section .patch.l2_cache_size, \"ax\"\n"
     "  li    3, 0\n"
+    "  blr\n"
+    /* trace_setup, the trace service's set-up, which only a trace tool
+     * calls: refused (KERN_FAILURE), its body the room for kernel-video.c and
+     * the stand-ins' routines above. */
+    "  .section .patch.trace_setup, \"ax\"\n"
+    "  li    3, 5\n"
     "  blr\n"
     /* l2_cache_dpe (IBM's L2 error status, in a planar register): none. */
     "  .section .patch.l2_cache_dpe, \"ax\"\n"

@@ -12,14 +12,17 @@
 #   devices/scsi06 for sandalfoot, carolina takes no args, so comment next
 #   line".  With no argument it reads the firmware's fw-boot-device from
 #   NVRAM, whose SCSI form its parser cannot decode, and stops at "Boot
-#   device could not be identified!".
+#   device could not be identified!".  The disk's SCSI ID is left as "?":
+#   the loader service puts in the ID of the disk the shim booted from as
+#   the disk's loader reads the file (shim/ldrsvc.c), so the disk can be at
+#   any ID (a Sandalfoot's was 6, a Power Macintosh's internal bay is 0).
 #
 # Applied to the installed BOOT.CFG and to the installer's service copies.
 file /BOOT/BOOT.CFG
 replace-text 'PN_FILE_NAME="/mk/dd_ide"\r\nPN_FILE_FS_NAME="/machserv/dd_ide"\r\n#PN_FILE_NAME="/mk/dd_scsi0.dyn"\r\n#PN_FILE_FS_NAME="/machserv/dd_scsi0"\r\n#PN_FILE_NAME="/mk/dd_scsi1.dyn"\r\n#PN_FILE_FS_NAME="/machserv/dd_scsi1"\r\n' '#PN_FILE_NAME="/mk/dd_ide"\r\n#PN_FILE_FS_NAME="/machserv/dd_ide"\r\nPN_FILE_NAME="/mk/dd_scsi0.dyn"\r\nPN_FILE_FS_NAME="/machserv/dd_scsi0"\r\nPN_FILE_NAME="/mk/dd_scsi1.dyn"\r\nPN_FILE_FS_NAME="/machserv/dd_scsi1"\r\n'
-replace-text '#PN_FILE_ARGV="devices/scsi06"\r\nPN_FILE_ARGV=""' 'PN_FILE_ARGV="devices/scsi06"\r\n#N_FILE_ARGV=""'
+replace-text '#PN_FILE_ARGV="devices/scsi06"\r\nPN_FILE_ARGV=""' 'PN_FILE_ARGV="devices/scsi0?"\r\n#N_FILE_ARGV=""'
 file /OS2/INSTALL/SERVICE/BOOT.CFG
 replace-text 'PN_FILE_NAME="/mk/dd_ide"\r\nPN_FILE_FS_NAME="/machserv/dd_ide"\r\n#PN_FILE_NAME="/mk/dd_scsi0.dyn"\r\n#PN_FILE_FS_NAME="/machserv/dd_scsi0"\r\n#PN_FILE_NAME="/mk/dd_scsi1.dyn"\r\n#PN_FILE_FS_NAME="/machserv/dd_scsi1"\r\n' '#PN_FILE_NAME="/mk/dd_ide"\r\n#PN_FILE_FS_NAME="/machserv/dd_ide"\r\nPN_FILE_NAME="/mk/dd_scsi0.dyn"\r\nPN_FILE_FS_NAME="/machserv/dd_scsi0"\r\nPN_FILE_NAME="/mk/dd_scsi1.dyn"\r\nPN_FILE_FS_NAME="/machserv/dd_scsi1"\r\n'
-replace-text '#PN_FILE_ARGV="devices/scsi06"\r\nPN_FILE_ARGV=""' 'PN_FILE_ARGV="devices/scsi06"\r\n#N_FILE_ARGV=""'
+replace-text '#PN_FILE_ARGV="devices/scsi06"\r\nPN_FILE_ARGV=""' 'PN_FILE_ARGV="devices/scsi0?"\r\n#N_FILE_ARGV=""'
 file /OS2/INSTALL/SERVICE/BOOT.IDE
-replace-text '#PN_FILE_ARGV="devices/scsi06"\r\nPN_FILE_ARGV=""' 'PN_FILE_ARGV="devices/scsi06"\r\n#N_FILE_ARGV=""'
+replace-text '#PN_FILE_ARGV="devices/scsi06"\r\nPN_FILE_ARGV=""' 'PN_FILE_ARGV="devices/scsi0?"\r\n#N_FILE_ARGV=""'

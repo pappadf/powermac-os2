@@ -13,9 +13,18 @@ turns the boot loader's PC-port, PCI-configuration and NVRAM routines into
 branches to it, and it does those jobs on the Mac's hardware:
 
 - COM1 is a 16550 emulated on the ESCC.
-- The VGA ports go to Bandit 1's I/O space.
+- The VGA ports go to Bandit 1's I/O space (only when a 54M30 decodes them).
 - PCI configuration uses Bandit configuration cycles.
 - The NVRAM reads as blank.
+- The loader's disk (its SCSI module's chip set-up, target probe and block
+  transfers) goes through `scsi.c`, the shim's own polled driver: the
+  53C825A by its SCRIPTS processor, or a Power Macintosh's MESH with DBDMA.
+  The hard disk is the one the shim booted from, at any SCSI ID.
+
+The shim reads the boot partition with the same `scsi.c`. On a Power
+Macintosh without a display card it also sets up the on-board Control
+(`control.c`): 640x480 in 8-bit colour, and a shadow frame buffer in RAM
+that it keeps from OS/2 (see `docs/how-it-works.md`).
 
 `make` here builds `build/SHIM.XCF` and `build/os2shim.img`. The top-level
 `make shim` does the same and copies the floppy to `../build/`. See the
@@ -28,7 +37,7 @@ top-level README for booting.
 | 1 | `os2boot.of` | Reads `SHIM.XCF` off the floppy with `read-blocks` (its sectors are filled in by `mkfloppy.sh`), claims and maps its pages through `/chosen`'s `memory` and `mmu` instances, moves it to load-base, and calls the ROM's `xcoff-loader` `init-program` (which lays it out at 0x50000), then `go`. This is the NT boot floppy's mechanism on the production ROM |
 | 2 | `shim.c` | Through the client interface: `/chosen` `stdout`; RAM from `/memory` `reg`; `claim` 0x700000, 0x800000 and the 0xFF000 page |
 | 3 | `start.S` | Leaves Open Firmware: interrupts off, then four BATs: 0–256 MB identity, `$80000000` (Bandit 1's PCI memory, where the SCSI chip's registers are) and `$A0000000` cache-inhibited, and `$F0000000`–`$FFFFFFFF` for the Mac's own I/O (Bandit's ports, Grand Central) |
-| 3a | `shim.c` | **The boot device, without Open Firmware.** The 53C825A is the Network Server's first soldered chip (Bandit 1 device 17) where there is one, otherwise a 53C825A card in the first PCI slot (device 13: a Power Macintosh's A1). The shim sets its BARs and drives it itself, with a small polled SCRIPTS program (select, IDENTIFY, the command, data in, status, message in): a Power Macintosh's Open Firmware has no driver for a card without FCode. Like PReP firmware working through its boot list, it reads sector 0 of SCSI IDs 0–6 for the first partition table with a type-0x41 PReP boot partition. A fresh install finds the CD (ID 3); an installed system's disk comes first. It reads that partition's header (entry offset and image length at +0x200) and the image, to 0x800000 |
+| 3a | `shim.c` | **The boot device, without Open Firmware.** The SCSI chip is the Network Server's first soldered 53C825A (Bandit 1 device 17) where there is one, otherwise a 53C825A card in the first PCI slot (device 13: a Power Macintosh's A1), otherwise a Power Macintosh's internal bus, MESH. The shim sets a 53C825A's BARs, and drives either chip itself with `scsi.c` (select, IDENTIFY, the command, the data, status, message in; a SCRIPTS program on the 53C825A, the FIFO and DBDMA on MESH): a Power Macintosh's Open Firmware has no driver for a card without FCode. Like PReP firmware working through its boot list, it reads sector 0 of SCSI IDs 0–6 for the first partition table with a type-0x41 PReP boot partition, hard disks before CDs. A fresh install finds the CD (ID 3); an installed system's disk comes first. It reads that partition's header (entry offset and image length at +0x200) and the image, to 0x800000 |
 | 4 | `shim.c` | **The stub's work**, reproduced exactly (see below): residual data at 0x700000, its one big-endian store into the image, the per-word byte reversal of its little-endian trampoline, its stack frames (with the image-dependent words computed for the image loaded), cache flushes,  |
 | 4a | `shim.c` | **What PReP firmware leaves for the loader, on this machine's hardware:** the 53C825A's memory BAR at `$8F000000` and I/O BAR at `$20000000`, with decoding and bus mastering on (step 3a); the 54M30's (device 15: soldered on the Network Server, a card in a Power Macintosh's C1) display memory at `$82000000`, with its I/O and memory decoders on (the disk's loader programs the VGA DAC); and the loader service copied to `$40000` |
 | 5 | `start.S` | The stub's hand-off: segment registers zeroed, I-cache flash-invalidated, ILE on, the registers it leaves (r3 = entry, r4 = swapped length, r14 = residual, r15 = its length, r16 = 5 for Sandalfoot, and so on), `rfi` to 0x85F2A8 with MSR 0x11031 |

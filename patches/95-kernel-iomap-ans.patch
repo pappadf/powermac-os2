@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Mappings of PReP's linear I/O windows -- PCI I/O at $A0000000 (the SCSI
 # chip), PCI memory at $C0000000 -- made onto the Network Server's own Bandit
-# window, in the I/O pager every such mapping goes through (src/kernel-iomap.S).  Needs
-# patch 70 (the cave).
+# window, in the I/O pager every such mapping goes through (src/kernel-iomap.S),
+# except the stand-in display adapter's memory (patch 97), which is a shadow
+# frame buffer in RAM.  Needs patch 70 (the cave).
 file /MK/MK_TEST.PPC
-asm src/kernel-iomap.S a071c1a1b844
+asm src/kernel-iomap.S ffc350534cba

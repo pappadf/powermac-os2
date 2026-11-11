@@ -1,7 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* loader-scsi.S -- BL_AUTO's SCSI module on the Network Server's hardware.
  * The module runs at file offset + $ACE3C (cc000-cdfff in memory); see
- * loader-svc.h for the service it calls.
+ * loader-svc.h for the service it calls.  Its disk routines go to the
+ * service's own driver (the end of this file); the edits before them keep
+ * its PCI configuration routines working, and its 53C810 code, which no
+ * longer runs, pointed at the right place.
  */
 #include "loader-svc.h"
 
@@ -46,3 +49,26 @@
 	mr    3, 24
 	.section .patch.0xcd378-0xcd37c, "ax"
 	mr    3, 12
+
+/* The disk itself -- the chip's set-up, a unit's probe, a transfer -- goes to
+ * the loader service's polled driver (shim/scsi.c), which drives the 53C825A
+ * as the module would, and also a Power Macintosh's MESH, for which the
+ * module has no code at all.  The module's SCRIPTS engine is never started.
+ *   - the chip's set-up: the service, then the module's own initialisation
+ *     of its two unit records (or its "no SCSI adapter" message);
+ *   - probe (unit, ID or 255 for any, device type) and transfer (request):
+ *     the service, which fills and reads the unit records at UNITS. */
+#define UNITS 0xCF4A0
+	.section .patch.0xcd918-0xcd928, "ax"
+	bla   LDRSVC_SCSI_INIT
+	cmpwi 3, 0
+	bne   . + 0xd0          /* the unit records, as before */
+	b     . + 0xd4          /* "no SCSI adapter" */
+	.section .patch.0xcd3e8-0xcd3f4, "ax"
+	lis   6, UNITS@ha
+	addi  6, 6, UNITS@l
+	ba    LDRSVC_SCSI_PROBE
+	.section .patch.0xcd79c-0xcd7a8, "ax"
+	lis   4, UNITS@ha
+	addi  4, 4, UNITS@l
+	ba    LDRSVC_SCSI_RW

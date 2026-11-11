@@ -1,0 +1,48 @@
+/***************************************************************************
+ *
+ *      OS/2 Warp (PowerPC Edition) PMI file for the on-board display of a
+ *      Power Macintosh 7500, 8500 or 9500: Control (343S1154) behind Chaos.
+ *
+ *      powermac-os2 (GPL-2.0-only).  The shim sets the mode before OS/2
+ *      starts (640 x 480, 8 bits), so the set mode section does nothing.
+ *      The frame buffer is a shadow in RAM that the kernel copies to the
+ *      screen; the palette goes through the VGA DAC ports, which the kernel
+ *      turns into the RaDACal's colour table.
+ *
+ ***************************************************************************/
+
+[PMIVersion]
+
+        1.0
+
+[Hardware]
+
+BusType         = PCI
+OEMString       = "Apple Control, on-board video 8bpp"
+DACString       = "Apple RaDACal"
+Version         = "343S1154"
+TotalMemory     = 0x100000
+MemoryIOAddress = 0x00000000
+PortIOAddress   = 0x00000000
+Endian          = LITTLE
+
+[comment]
+        Graphics Mode: 640 x 480 x 256 colors.
+
+[ModeInfo]
+        ModeAttributes   = 0x18
+        BytesPerScanLine = 640
+        XResolution      = 640
+        YResolution      = 480
+        TextRows         = 30
+        BitsPerPixel     = 8
+        NumberOfPlanes   = 1
+        PageLength       = 307200
+        SaveSize         = 307200
+        BufferAddress    = 0x0E000000
+        ApertureSize     = 0x00100000
+
+[SetMode]
+
+ outb(0x3c6, 0xff);
+
