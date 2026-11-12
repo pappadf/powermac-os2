@@ -1,28 +1,12 @@
 # powermac-os2
 
 > [!CAUTION]
-> **Experimental. Use on real hardware at your own risk.**
->
-> This project is experimental and is not supported or endorsed by Apple, IBM or Microsoft.
-> To boot, it puts the machine's Open Firmware into **little-endian mode**: it writes
-> `little-endian? true` and related variables (`real-mode?`, `real-base`, `load-base`, `boot-device`) to NVRAM and then resets the
-> machine. Apple never supported little-endian mode on these machines.
->
-> Some owners have reported that changing these NVRAM settings on real hardware left the
-> machine unable to boot until NVRAM was reset, and at least one report describes a machine
-> that could not be recovered
-> ([Apple Support Communities thread](https://discussions.apple.com/thread/1085726)).
-> **Running this on a real machine may require an NVRAM reset, and in the worst case it may
-> brick the machine.**
->
-> So far this has only been tested in the [granny-smith](https://github.com/pappadf/granny-smith) emulator. It has not been tried on real hardware.
->
-> Before you try it on a real machine, make sure you know how to reset that model's NVRAM
-> and Open Firmware settings, and don't use a machine you can't afford to lose.
->
-> As the [licence](LICENSE) (GPL-2.0, sections 11–12) says, this software is provided
-> **"as is", without warranty of any kind**, and the authors are not liable for any damage
-> that results from using it, including damage to your hardware or loss of data.
+> **Experimental. Do not run this on a real Mac you care about.**
+> Booting it writes `little-endian? true` to Open Firmware's NVRAM, which Apple never supported.
+> Changing this setting has been [reported](https://discussions.apple.com/thread/1085726) to
+> leave machines needing an NVRAM reset, and at least one could not be recovered. This project
+> has only been tested in the [granny-smith](https://github.com/pappadf/granny-smith) emulator,
+> and it comes with no warranty (see the [licence](LICENSE), GPL-2.0 sections 11–12).
 
 Remaster IBM's OS/2 Warp (PowerPC Edition) CD so that it installs and boots
 on Apple hardware, an Apple Network Server 500/700 or a Power Macintosh
