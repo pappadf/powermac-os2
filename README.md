@@ -1,5 +1,13 @@
 # powermac-os2
 
+> [!CAUTION]
+> **Experimental. Do not run this on a real Mac you care about.**
+> Booting it writes `little-endian? true` to Open Firmware's NVRAM, which Apple never supported.
+> Changing this setting has been [reported](https://discussions.apple.com/thread/1085726) to
+> leave machines needing an NVRAM reset, and at least one could not be recovered. This project
+> has only been tested in the [granny-smith](https://github.com/pappadf/granny-smith) emulator,
+> and it comes with no warranty (see the [licence](LICENSE), GPL-2.0 sections 11–12).
+
 Remaster IBM's OS/2 Warp (PowerPC Edition) CD so that it installs and boots
 on Apple hardware, an Apple Network Server 500/700 or a Power Macintosh
 7500/8500/9500: patches for the kernel, the boot loader and the drivers, plus
