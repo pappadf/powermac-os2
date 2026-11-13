@@ -1,12 +1,22 @@
 # powermac-os2
 
 > [!CAUTION]
-> **Experimental. Do not run this on a real Mac you care about.**
-> Booting it writes `little-endian? true` to Open Firmware's NVRAM, which Apple never supported.
-> Changing this setting has been [reported](https://discussions.apple.com/thread/1085726) to
-> leave machines needing an NVRAM reset, and at least one could not be recovered. This project
-> has only been tested in the [granny-smith](https://github.com/pappadf/granny-smith) emulator,
-> and it comes with no warranty (see the [licence](LICENSE), GPL-2.0 sections 11–12).
+> **Experimental, and not supported by Apple or IBM. Do not run this on a real Mac you care
+> about.** Neither company ever supported OS/2 on these machines, and this project has only been
+> tested in the [granny-smith](https://github.com/pappadf/granny-smith) emulator, never on real
+> hardware. It drives the processor, the PCI bridges, the SCSI controllers, the power controller
+> and the disks itself, in ways Apple never designed or tested. A bug in it could, in theory,
+> damage the hardware, and it can destroy the data on any disk it can reach: the installer
+> partitions and formats disks. It comes with no warranty (see the [licence](LICENSE), GPL-2.0
+> sections 11–12).
+>
+> **It changes no NVRAM setting.** Earlier versions stored `little-endian? true` in Open
+> Firmware's NVRAM, a setting Apple never supported that has been
+> [reported](https://discussions.apple.com/thread/1085726) to leave machines needing an NVRAM
+> reset (at least one could not be recovered). The floppy now leaves the firmware in its factory
+> big-endian mode and switches the processor and the PCI bridges to little-endian itself, until
+> the next reset. If an earlier floppy was ever booted on a machine, put the factory value back
+> once ([Booting](#booting)).
 
 Remaster IBM's OS/2 Warp (PowerPC Edition) CD so that it installs and boots
 on Apple hardware, an Apple Network Server 500/700 or a Power Macintosh
