@@ -27,10 +27,13 @@
 #define KBD_PORT    0xF01031A0u  /* u32 kbd_port(u32 port, int store, u32 v): ports $60/$64 */
 #define KBD_TICK    0xF01031A4u  /* void kbd_tick(void): from the clock */
 #define KBD_IRQ     0xF01031A8u  /* int kbd_irq(void): the IRQ (1 or 12) the VIA's source is taken as */
+/* kernel-video.c's entry point (in trace_setup, past kernel-trap.c's code). */
+#define VIDEO_TICK  0xF0163F90u  /* void video_tick(void): from the clock */
 /* mot_enable_l2_cache, a blr (kernel-trap.c): its body holds kernel-adb.c's
  * kbd_line, kbd_irq and kbd_tick from +$4, and kernel-ints.c's gc_vector_kbd
  * from +$150. */
-/* kernel-ints.c's irq_gc (16 source masks) at $F016E740. */
+/* kernel-ints.c's irq_gc (16 source masks) at $F016E740; kernel-trap.c's
+ * stand-in configuration headers at $F016E780 and $F016E7C0. */
 #define CAVE_END    0xF016E800   /* the rest, to $F016F000, is the boot stack */
 #define CAVE_INTS   0xF016DE00   /* 0x800: interrupts through Grand Central (kernel-ints.c; its tables at +0x7C0) */
 

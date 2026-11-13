@@ -25,6 +25,17 @@
 #define LDRSVC_CFG_WR16   (LDRSVC + 0x1C)   /* (address, v) */
 #define LDRSVC_CFG_WR32   (LDRSVC + 0x20)   /* (address, v) */
 #define LDRSVC_NVRAM_RD   (LDRSVC + 0x24)   /* (index) -> v */
+/* The loader's SCSI module's three disk routines (loader-scsi.S), on the
+ * shim's own polled driver (shim/scsi.c): */
+#define LDRSVC_SCSI_INIT  (LDRSVC + 0x28)   /* () -> 1, or 0 without a chip */
+#define LDRSVC_SCSI_PROBE (LDRSVC + 0x2C)   /* (unit, id, type, units) -> 1 found */
+#define LDRSVC_SCSI_RW    (LDRSVC + 0x30)   /* (request, units) -> 1 done */
+/* Which chip that is, written by the shim: a 53C825A's Bandit 1 device (13 or
+ * 17), or SCSI_CHIP_MESH. */
+#define LDRSVC_SCSI_CHIP  (LDRSVC + 0x40)
+#define SCSI_CHIP_MESH    0xFF
+/* The hard disk the shim booted from: its SCSI ID, or 255 (a CD). */
+#define LDRSVC_BOOT_DISK  (LDRSVC + 0x48)
 
 /* The first 53C825A's two BARs.  Its registers appear in both, identically.
  * The I/O BAR keeps the value PReP firmware and the loader give it, PCI I/O

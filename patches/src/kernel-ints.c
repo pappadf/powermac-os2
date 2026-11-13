@@ -214,6 +214,10 @@ __asm__(
     "  stwu 1, -16(1)\n"
     "  stw 0, 20(1)\n"
     "  bl gc_tick\n"
+    "  lis 12, 0xF016\n"          /* and VIDEO_TICK, the on-board display's copier (kernel-video.c) */
+    "  ori 12, 12, 0x3F90\n"
+    "  mtctr 12\n"
+    "  bctrl\n"
     "  lwz 0, 20(1)\n"
     "  addi 1, 1, 16\n"
     "  mtlr 0\n"

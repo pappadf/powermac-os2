@@ -88,3 +88,20 @@
 	mr    3, 24
 	.section .patch.0x1b9c4-0x1b9c8, "ax"
 	mr    3, 12
+
+/* The disk itself: the loader service's driver, as in BL_AUTO (loader-scsi.S),
+ * with this build's unit records at $CE2A8. */
+#define UNITS 0xCE2A8
+	.section .patch.0x1bf44-0x1bf54, "ax"
+	bla   LDRSVC_SCSI_INIT
+	cmpwi 3, 0
+	bne   . + 0xd0          /* the unit records, as before */
+	b     . + 0xd4          /* "no SCSI adapter" */
+	.section .patch.0x1ba34-0x1ba40, "ax"
+	lis   6, UNITS@ha
+	addi  6, 6, UNITS@l
+	ba    LDRSVC_SCSI_PROBE
+	.section .patch.0x1bdc8-0x1bdd4, "ax"
+	lis   4, UNITS@ha
+	addi  4, 4, UNITS@l
+	ba    LDRSVC_SCSI_RW

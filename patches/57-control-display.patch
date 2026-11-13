@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# OS/2's video server on a Power Macintosh's on-board display, when there is no
+# display card: the configuration trap presents the board's Control in slot 13
+# (patch 97), and here the hardware database gets a stanza for its ID (named
+# as the database names PCI IDs, without leading zeros: patch 40's ID fix
+# reads it; its memory, the shadow frame buffer, where kernel-iomap.S puts
+# it, and the VGA ports, which the trap answers: VIDEOPMI reads some of them
+# whatever the adapter, and its palette goes through the DAC's),
+# VIDEOPMI.LST an entry naming CONTROL.PMI, and CONTROL.PMI itself
+# (src/control.pmi), whose OEM string no accelerated driver claims, so the
+# generic GRADD draws.
+file /MK/RDF.STZ
+replace-text 'CMOS_type1:' '#Apple Control, the Power Macintosh 7500/8500/9500 on-board video (powermac-os2)\r\n3106B:\r\n        dev_class       = CONTROL\r\n        adap_name       = "Apple Control on-board video"\r\n        pci_access      = "1"\r\n        setting         = "io:io_3c0:3c0-3ca"\r\n        setting         = "io:io_3cc:3cc"\r\n        setting         = "io:io_3b4:3b4-3b5"\r\n        setting         = "io:io_3ba:3ba"\r\n        setting         = "io:io_3d4:3d4-3d5"\r\n        setting         = "io:io_3da:3da"\r\n        setting         = "io:io_3ce:3ce-3cf"\r\n        setting         = "mem:video_mem1:e000000-e0fffff"\r\n\r\nCMOS_type1:'
+file /OS2/VIDEOPMI.LST
+replace-text 'DESCRIPTION   = "STB Nitro Cirrus 5434 PCI"' 'DESCRIPTION   = "STB Nitro Cirrus 5434 PCI"\r\nCONTROL:\r\n   ID            = 0003106B\r\n   PMI_SUPPORT   = "control.pmi"\r\n   DESCRIPTION   = "Apple Control on-board video (Power Macintosh 7500/8500/9500)"'
+add /OS2/CONTROL.PMI src/control.pmi
+# And the installer's list of what it copies to the hard disk.
+file /SYSFILES.LST
+replace-text 'os2/wp_9100.pmi|*os2/wp_9100.pmi' 'os2/wp_9100.pmi|*os2/wp_9100.pmi\r\nos2/control.pmi|*os2/control.pmi'

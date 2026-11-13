@@ -28,19 +28,22 @@ emulator:
 - an Apple Network Server 500 (stock machine model), on the production ROM
   (Open Firmware 1.1.22) and on the 2.26NT ROM;
 - a Power Macintosh 8500 with two PCI cards: a Symbios 53C825A SCSI card in
-  slot A1 and a Cirrus Logic 54M30 VGA card in slot C1. OS/2 has no drivers
-  for the 8500's own MESH, 53C94 or Control video.
+  slot A1 and a Cirrus Logic 54M30 VGA card in slot C1;
+- a Power Macintosh 8500 as it ships, without cards: OS/2 uses the internal
+  SCSI bus (MESH) and the on-board display (Control).
 
 Real hardware hasn't been tried yet. What works:
 
 - Open Firmware loads the boot floppy, which starts IBM's boot loader from
   the CD or from an installed disk.
 - The kernel and its drivers come up: SCSI on the 53C825A (the Network
-  Server's first fast/wide bus, or the card), the serial console on the Mac's
-  serial port, video on the Cirrus 54M30 (on-board, or the card), and the
+  Server's first fast/wide bus, or the card) or, without a card, on a Power
+  Macintosh's internal bus (MESH); the serial console on the Mac's serial
+  port; video on the Cirrus 54M30 (on-board, or the card) or, without one,
+  on a Power Macintosh's on-board Control, 640x480 in 256 colours; and the
   keyboard and mouse over ADB.
-- The installer runs (Easy Installation, 2,045 files) onto a disk at SCSI
-  ID 6.
+- The installer runs (Easy Installation, 2,045 files) onto a disk at any
+  SCSI ID.
 - The installed system boots from that disk to the Workplace Shell, with
   the keyboard and the mouse (pointer movement and buttons), with or
   without a CD in the drive. Patch 45 fixes a startup race in IBM's OS/2
@@ -53,8 +56,15 @@ Not working yet:
   time base without being saved.
 - **Other Macs:** only the Network Server 500/700 and the 7500/8500/9500
   (Bandit and Grand Central) are handled, and of those only the 500 and the
-  8500 have been run. On a 7500/8500/9500 the two cards must be in A1 and
-  C1.
+  8500 have been run. On a 7500/8500/9500 the cards, if used, must be in A1
+  and C1.
+- **A Power Macintosh's other SCSI bus:** the 53C94 (the external connector,
+  and on a stock machine the CD-ROM drive) has no driver. Without a SCSI
+  card, the CD must be on the internal bus to install.
+- **On-board video:** one mode, 640x480 in 256 colours, drawn by OS/2's
+  generic display driver into memory that the kernel copies to the screen.
+  That memory is the top megabyte of the first 64 MB, so OS/2 then uses
+  63 MB of RAM, and none past 64 MB.
 
 ## What you need
 
@@ -93,11 +103,13 @@ the input image.
 ## Booting
 
 **The machine.** On a Network Server, nothing to add: the CD and the disk go
-on the first fast/wide bus. On a Power Macintosh 7500/8500/9500, put a
-53C825A SCSI card in slot **A1** (the CD and the disk go on its bus) and a
-Cirrus Logic 54M30 VGA card in slot **C1** (OS/2's screen). Neither card
-needs FCode: the shim drives the SCSI card itself, and Open Firmware's
-console stays on the serial port or the Mac's own video.
+on the first fast/wide bus. A Power Macintosh 7500/8500/9500 runs OS/2 as it
+is: the disk and the CD go on the internal SCSI bus (MESH), and OS/2's
+screen is the on-board video. Or, with cards: a 53C825A SCSI card in slot
+**A1** (the CD and the disk then go on its bus) and a Cirrus Logic 54M30 VGA
+card in slot **C1** (OS/2's screen). Neither card needs FCode: the shim
+drives the SCSI chip itself, and Open Firmware's console stays on the
+serial port.
 
 **Memory:** at least 64 MB. The settings below put Open Firmware at 63 MB
 (`real-base`), and a machine with less RAM does not come back from the reset.
@@ -119,8 +131,9 @@ later power-on while the floppy is in, the firmware boots it without
 typing.
 
 **To install:**
-1. Put the patched CD at SCSI ID 3 and a blank disk at **SCSI ID 6** on the
-   53C825A's bus. ID 6 matters: IBM's disk loader expects that ID.
+1. Put the patched CD at SCSI ID 3 and a blank disk at another ID (0 is a
+   Power Macintosh's internal bay) on the same bus: the 53C825A's, or
+   without a card the internal bus.
 2. Insert the floppy, and at the `0 >` prompt (on the serial port, ttya, or
    the Mac's own screen) type:
    ```

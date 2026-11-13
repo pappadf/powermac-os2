@@ -3,6 +3,7 @@
 # and the PReP interrupt-acknowledge register (src/kernel-ints.c).  Needs
 # patch 70 (the code cave and BAT1).  The shim no longer sets PReP's
 # little-endian bit in port $92, so the machine's interrupt line is Grand
-# Central's, as on any Network Server.
+# Central's, as on any Network Server.  The clock also runs the on-board
+# display's copier (patch 97, VIDEO_TICK).
 file /MK/MK_TEST.PPC
-asm src/kernel-ints.c 74e4ba2e00ad
+asm src/kernel-ints.c 91063256a858

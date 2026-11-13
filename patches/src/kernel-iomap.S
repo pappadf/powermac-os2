@@ -16,7 +16,10 @@
  *                        registers repeat in its memory BAR at $8F000000
  *                        (loader-svc.h), so -> $8F000000 + the offset.
  *   $C0000000-$CFFFFFFF  PCI memory: Bandit 1 forwards $80000000-$8FFFFFFF
- *                        one-to-one, so -> $80000000-$8FFFFFFF.
+ *                        one-to-one, so -> $80000000-$8FFFFFFF.  Except
+ *                        $CE000000-$CE0FFFFF, the stand-in display adapter's
+ *                        memory (kernel-trap.c): -> the shadow frame buffer
+ *                        in RAM at $03F00000 (kernel-video.c).
  *
  * Both are linear, page by page.  The spread ISA ports and direct-mapped
  * configuration ($80000000-$80FFFFFF) are not: their pages go to the trap
@@ -41,7 +44,12 @@ io_phys:
 	beq   1f
 	cmpwi 11, 0xC
 	bnelr
+	addis 12, 3, 0x3200             /* the stand-in display's memory, $CE000000-$CE0FFFFF? */
+	srwi. 12, 12, 20
+	beq   3f
 	addis 3, 3, -0x4000             /* $Cxxxxxxx -> $8xxxxxxx */
+	blr
+3:	addis 3, 3, 0x35F0              /* $CE000000 + o -> the shadow frame buffer, $03F00000 + o */
 	blr
 1:	addis 3, 3, -0x1100             /* $A0000000 + o -> $8F000000 + o (SCSI_MEM_BAR) */
 	blr

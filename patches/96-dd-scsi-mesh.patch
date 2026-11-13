@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# OS/2's SCSI driver on a Power Macintosh's internal bus, MESH, when there is
+# no SCSI card: the NCR driver binds to the stand-in 53C810 the configuration
+# trap presents (patch 97), and its chip routines, its command start and its
+# interrupt thread run MESH instead whenever MESH is the chip behind it
+# (src/dd-scsi-mesh.c).  With a 53C825A nothing changes.  Needs patches 95
+# and 97.
+file /MK/DD_SCSI0.DYN
+asm src/dd-scsi-mesh.c caafcffa7bdd
