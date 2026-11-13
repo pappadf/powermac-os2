@@ -16,14 +16,17 @@ off = img.find(data)
 assert off >= 0 and off % 512 == 0, 'SHIM.XCF not contiguous on the floppy'
 sec, n = off // 512, (len(data) + 511) // 512
 reads = []
-addr = 0x3D00000
+addr = 0x1000000
 while n > 0:
     k = min(n, 0x20)
     reads.append(f'   {addr:X} {sec:X} {k:X} " read-blocks" os2-fd $call-method drop')
     addr += k * 512; sec += k; n -= k
 maplen = (len(data) + 0xFFF) // 0x1000 * 0x1000
+# What xcoff-loader lays out at 0x600000: tsize + dsize + bsize (a.out header).
+import struct
+imglen = sum(struct.unpack('>III', data[24:36]))
 s = open(tmpl).read()
-s = s.replace('@READS@', '\n'.join(reads)).replace('@SIZE@', f'{len(data):X}').replace('@MAPLEN@', f'{maplen:X}')
+s = s.replace('@READS@', '\n'.join(reads)).replace('@SIZE@', f'{len(data):X}').replace('@MAPLEN@', f'{maplen:X}').replace('@IMGLEN@', f'{imglen:X}')
 s = s.replace('@SECTORS@ is filled in by mkfloppy.sh.', f'SHIM.XCF is sectors {off//512:X}-{off//512 + (len(data)+511)//512 - 1:X}.')
 # CRLF: this Open Firmware's `\` comment runs to a carriage return, so with bare
 # line feeds the first comment would swallow the whole file.

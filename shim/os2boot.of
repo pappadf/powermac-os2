@@ -3,16 +3,18 @@
 \ or a Power Macintosh 7500/8500/9500
 \
 \ With the OS/2 PowerPC CD 1 at SCSI ID 3 on the 53C825A (the Network Server's
-\ first fast/wide bus, or a 53C825A card in a Power Macintosh's slot A1):
+\ first fast/wide bus, or a 53C825A card in a Power Macintosh's slot A1), or
+\ OS/2 installed on a hard disk:
 \     load fd:,\os2boot.of
 \     load-base loadsize eval
-\ On a machine not yet in little-endian mode the script sets the variables
-\ Windows NT also uses (little-endian? real-mode? real-base load-base), points
-\ boot-device at itself and resets; the firmware then boots this script on its
-\ own, and every later power-on does the same while the floppy is in.
+\ The firmware stays in its factory, big-endian mode and this floppy sets no
+\ NVRAM variable.  SHIM.XCF's first stage asks the firmware for the RAM size,
+\ then switches the CPU and the PCI bridges to little-endian itself, until the
+\ next reset (shim/stage0.c).
 \
-\ This reads SHIM.XCF off this floppy into load-base, lays it out with the ROM's
-\ xcoff-loader and starts it.  @SECTORS@ is filled in by mkfloppy.sh.
+\ This reads SHIM.XCF off this floppy at 16 MB, moves it to load-base, lays it
+\ out with the ROM's xcoff-loader (which claims 0x600000 itself) and starts it.  @SECTORS@ is
+\ filled in by mkfloppy.sh.
 
 0 value os2-xl
 0 value os2-fd
@@ -26,37 +28,37 @@
 " mmu" os2-ih value os2-mmu
 : os2-claim ( addr size -- ) 0 " claim" os2-mem ['] $call-method catch if 2drop 2drop 2drop else drop then ;
 : os2-map ( addr size -- ) 2dup os2-claim over swap 0 " map" os2-mmu $call-method ;
+\ Map only: the pages xcoff-loader lays the image out in.  It claims them
+\ itself (a claim made here first makes its own fail), but a Power Macintosh's
+\ loader does not map what it claims and would fault writing them.
+: os2-map-only ( addr size -- ) over swap 0 " map" os2-mmu $call-method ;
 
-\ Running little-endian (a stored 1 reads back low byte first), with the
-\ memory layout the shim is laid out for.
-: os2-ready? ( -- flag )
-   1 pad !  pad c@ 1 =
-   real-mode? 0= and  real-base 3F00000 = and  load-base 3E00000 = and
-;
+\ A firmware already running little-endian was set up by an earlier version
+\ of this floppy (`little-endian? true`).  This one needs the factory setting.
+: os2-little?  ( -- flag )  1 pad !  pad c@ 1 = ;
 
-: os2-configure
-   ." os2shim: setting little-endian mode, then resetting" cr
-   " true" " little-endian?" $setenv
-   " false" " real-mode?" $setenv
-   " 3F00000" " real-base" $setenv
-   " 3E00000" " load-base" $setenv
-   " fd:,\os2boot.of" " boot-device" $setenv
-   reset-all
+: os2-undo
+   ." os2shim: this firmware is running little-endian: an earlier os2shim floppy" cr
+   ." os2shim: set little-endian? true.  This floppy needs no NVRAM setting;" cr
+   ." os2shim: restore the factory value, then load this script again:" cr
+   ."     setenv little-endian? false" cr
+   ."     reset-all" cr
 ;
 
 : os2-boot
    " /packages/xcoff-loader" open-dev to os2-xl
-   3D00000 @MAPLEN@ os2-map
+   1000000 @MAPLEN@ os2-map
    " /bandit/gc/swim3" open-dev to os2-fd
 @READS@
    os2-fd close-dev
-   3E00000 @MAPLEN@ os2-map
-   3D00000 3E00000 @SIZE@ move
+   load-base @MAPLEN@ os2-map
+   600000 @IMGLEN@ os2-map-only
+   1000000 load-base @SIZE@ move
    @SIZE@ to loadsize
    " init-program" os2-xl $call-method
    ." os2shim: starting" cr
    go
 ;
 
-: os2-main  os2-ready? if os2-boot else os2-configure then ;
+: os2-main  os2-little? if os2-undo else os2-boot then ;
 os2-main

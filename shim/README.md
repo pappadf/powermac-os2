@@ -1,9 +1,12 @@
 # The shim: OS/2 from Open Firmware
 
-`SHIM.XCF` is a small little-endian PowerPC program, an XCOFF that Open
-Firmware's own `xcoff-loader` loads from the boot floppy: the Network
+`SHIM.XCF` is an XCOFF that Open Firmware's own `xcoff-loader` loads from the
+boot floppy, with the firmware in its factory big-endian mode: the Network
 Server's production ROM (1.1.22) or its 2.26NT ROM, or a Power Macintosh
-7500/8500/9500's Open Firmware 1.0.5. It hands IBM's
+7500/8500/9500's Open Firmware 1.0.5. Its first stage (`stage0.c`,
+`stage0.S`) is big-endian: it asks the firmware for the RAM size and the
+Bandit bridges, then switches the machine to little-endian itself and
+enters the shim proper, a small little-endian PowerPC program. It hands IBM's
 boot image the state that IBM's PReP firmware and boot stub would have given
 it. It needs no PReP firmware and no lane-reversing host bridge, only the
 Mac's own little-endian semantics.
@@ -34,9 +37,9 @@ top-level README for booting.
 
 | Step | Where | What |
 |---|---|---|
-| 1 | `os2boot.of` | Reads `SHIM.XCF` off the floppy with `read-blocks` (its sectors are filled in by `mkfloppy.sh`), claims and maps its pages through `/chosen`'s `memory` and `mmu` instances, moves it to load-base, and calls the ROM's `xcoff-loader` `init-program` (which lays it out at 0x50000), then `go`. This is the NT boot floppy's mechanism on the production ROM |
-| 2 | `shim.c` | Through the client interface: `/chosen` `stdout`; RAM from `/memory` `reg`; `claim` 0x700000, 0x800000 and the 0xFF000 page |
-| 3 | `start.S` | Leaves Open Firmware: interrupts off, then four BATs: 0–256 MB identity, `$80000000` (Bandit 1's PCI memory, where the SCSI chip's registers are) and `$A0000000` cache-inhibited, and `$F0000000`–`$FFFFFFFF` for the Mac's own I/O (Bandit's ports, Grand Central) |
+| 1 | `os2boot.of` | Reads `SHIM.XCF` off the floppy with `read-blocks` (its sectors are filled in by `mkfloppy.sh`) to 16 MB, moves it to the firmware's default load-base, maps the pages the image is laid out in (a Power Macintosh's `xcoff-loader` claims them but does not map them), and calls the ROM's `xcoff-loader` `init-program` (which lays it out at 0x600000), then `go`. On a firmware an earlier floppy left little-endian it says how to restore the factory value and stops |
+| 2 | `stage0.c` | Big-endian, through the client interface: `/chosen` `stdout`; RAM from `/memory` `reg`; the Bandit bridges (the root's `bandit` children) |
+| 3 | `stage0.S` | Leaves Open Firmware: interrupts off, four BATs (0–256 MB identity, `$80000000` and `$A0000000` cache-inhibited, `$F0000000`–`$FFFFFFFF` for the Mac's own I/O); the shim copied to 0x50000 with each doubleword's bytes reversed (the layout a little-endian 60x reads through its address munging); caches flushed; **each Bandit's byte lanes reversed** with the exact bus cycles the ROM makes when it starts little-endian (config address `$50080000` stored at the address port + 4, then a byte read-modify-write of data port + 7 clearing bit 0, traced in the emulator); ILE on and `rfi` into the shim with LE set |
 | 3a | `shim.c` | **The boot device, without Open Firmware.** The SCSI chip is the Network Server's first soldered 53C825A (Bandit 1 device 17) where there is one, otherwise a 53C825A card in the first PCI slot (device 13: a Power Macintosh's A1), otherwise a Power Macintosh's internal bus, MESH. The shim sets a 53C825A's BARs, and drives either chip itself with `scsi.c` (select, IDENTIFY, the command, the data, status, message in; a SCRIPTS program on the 53C825A, the FIFO and DBDMA on MESH): a Power Macintosh's Open Firmware has no driver for a card without FCode. Like PReP firmware working through its boot list, it reads sector 0 of SCSI IDs 0–6 for the first partition table with a type-0x41 PReP boot partition, hard disks before CDs. A fresh install finds the CD (ID 3); an installed system's disk comes first. It reads that partition's header (entry offset and image length at +0x200) and the image, to 0x800000 |
 | 4 | `shim.c` | **The stub's work**, reproduced exactly (see below): residual data at 0x700000, its one big-endian store into the image, the per-word byte reversal of its little-endian trampoline, its stack frames (with the image-dependent words computed for the image loaded), cache flushes,  |
 | 4a | `shim.c` | **What PReP firmware leaves for the loader, on this machine's hardware:** the 53C825A's memory BAR at `$8F000000` and I/O BAR at `$20000000`, with decoding and bus mastering on (step 3a); the 54M30's (device 15: soldered on the Network Server, a card in a Power Macintosh's C1) display memory at `$82000000`, with its I/O and memory decoders on (the disk's loader programs the VGA DAC); and the loader service copied to `$40000` |
@@ -84,10 +87,15 @@ native.
 - **CRLF line endings in `os2boot.of`.** This firmware's `\` comment runs to a
   carriage return. With bare line feeds the first comment swallows the whole
   script, and `eval` silently does nothing.
-- **Image base.** 0x600000 and 0x500000 were not claimable for the image.
-  0x50000, where the NT veneer runs, is.
-- **XCOFF headers are little-endian.** A firmware running with
-  `little-endian? true` reads them with little-endian loads; the a.out entry
+- **Don't claim what `xcoff-loader` will claim.** It claims each section's
+  pages itself, and a claim made first by the script makes its own fail
+  (`CLAIM failed`). Earlier notes blamed the address; it was the double
+  claim. A Power Macintosh's loader claims without mapping, though, so the
+  script maps the image's pages without claiming them.
+- **XCOFF headers are big-endian**, as the firmware stays big-endian. (When
+  it ran with `little-endian? true` it read them with little-endian loads.)
+  A big-endian `xcoff-loader` also claims `.data` even when it is empty, and
+  a claim of nothing fails, so `mkxcoff.py` writes one page of it. The a.out entry
   is a function descriptor that the loader jumps through.
 - **Property integers are big-endian** in little-endian mode too. A swapped
   `stdout` ihandle means a silent console; swapped `/memory` sizes mean a

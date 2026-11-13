@@ -111,24 +111,31 @@ card in slot **C1** (OS/2's screen). Neither card needs FCode: the shim
 drives the SCSI chip itself, and Open Firmware's console stays on the
 serial port.
 
-**Memory:** at least 64 MB. The settings below put Open Firmware at 63 MB
-(`real-base`), and a machine with less RAM does not come back from the reset.
+**Memory:** at least 64 MB (what it is tested with).
 
-**The first time**, the floppy puts Open Firmware in little-endian mode by
-itself. On a machine that isn't set up yet, `os2boot.of` sets the same
-variables Windows NT uses on this machine and resets:
+**Nothing to configure.** Open Firmware stays in its factory, big-endian
+mode, and the floppy stores nothing in NVRAM. Its first stage (`stage0` in
+`SHIM.XCF`) runs as an ordinary big-endian client, then switches the
+processor and the Bandit PCI bridges to little-endian itself, until the next
+reset (see [shim/README.md](shim/README.md)). That is the approach of
+[maciNTosh](https://github.com/Wack0/maciNTosh)'s loader on later Macs.
+
+Earlier versions set `little-endian? true` (with `real-mode?`, `real-base`,
+`load-base` and `boot-device`) in NVRAM and reset. Apple never supported
+that setting, and it has been
+[reported](https://discussions.apple.com/thread/1085726) to leave machines
+needing an NVRAM reset. On a machine an earlier floppy set up, `os2boot.of`
+says so and stops; put the factory value back once at the `0 >` prompt:
 
 ```
-setenv little-endian? true
-setenv real-mode? false
-setenv real-base 3F00000
-setenv load-base 3E00000
-setenv boot-device fd:,\os2boot.of
+setenv little-endian? false
+reset-all
 ```
 
-It also points `boot-device` at itself, so after the reset, and at every
-later power-on while the floppy is in, the firmware boots it without
-typing.
+To have the firmware boot the floppy at power-on without typing, you can set
+`boot-device` to `fd:,\os2boot.of` yourself. That is an ordinary boot
+setting, unrelated to the processor's byte order, and the floppy never sets
+it.
 
 **To install:**
 1. Put the patched CD at SCSI ID 3 and a blank disk at another ID (0 is a
@@ -140,8 +147,6 @@ typing.
    load fd:,\os2boot.of
    load-base loadsize eval
    ```
-   On a machine not yet in little-endian mode this resets once and then
-   continues by itself.
 3. IBM's boot loader picks the CD on its own (patch 99): its defaults name
    `cd3`, `cdrom` and `boot.sci`, so no serial input is needed. Its log goes
    to the serial port (ttya).
