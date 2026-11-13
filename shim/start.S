@@ -1,71 +1,21 @@
 /* SPDX-License-Identifier: GPL-2.0-only
- * os2shim -- start.S: entry from Open Firmware's pe-loader, and the hand-off.
+ * os2shim -- start.S: entry from stage0, and the hand-off.
  *
- * Entered at ImageBase + 0 by `go`, in Open Firmware's little-endian mode,
- * with %r5 = the client interface handler (IEEE 1275 PowerPC binding).
+ * Entered at the image base by stage0's rfi (stage0.S), already in
+ * little-endian mode with the BATs loaded and the firmware left behind:
+ * %r3 = RAM size, %r4 = 'LE01'.  Both are passed straight to shim_main.
  */
 #define LI32(r, v) lis r, (v)@h; ori r, r, (v)@l
 
     .section .text.start, "ax"
     .globl _start
 _start:
-    lis     %r6, shim_cif@ha
-    stw     %r5, shim_cif@l(%r6)          /* keep the client interface */
     lis     %r1, (shim_stack + 16384)@ha
     addi    %r1, %r1, (shim_stack + 16384)@l
     li      %r0, 0
     stwu    %r0, -16(%r1)
     bl      shim_main                   /* never returns */
 1:  b       1b
-
-/* Leave Open Firmware: interrupts off, then four BATs: IBM's stub's
- * 0-256 MB identity (cacheable), $80000000 and $A0000000 identity,
- * cache-inhibited and guarded, as the stub leaves them, and in place of its
- * $C0000000 (PReP PCI memory, which the loader never touches) the Network
- * Server's own I/O at $F0000000: Bandit 1's ports and Grand Central, for the
- * shim and for the loader service (ldrsvc.c).  The shim's own image, stack and work areas
- * are below 256 MB and Open Firmware maps them virtual == physical, so
- * execution continues through the switch. */
-    .text
-    .globl shim_take_mmu
-shim_take_mmu:
-    mfmsr   %r3
-    rlwinm  %r3, %r3, 0, 17, 15           /* EE off */
-    mtmsr   %r3
-    isync
-    li      %r0, 0
-    mtspr   528, %r0                     /* invalidate every upper half first */
-    mtspr   530, %r0
-    mtspr   532, %r0
-    mtspr   534, %r0
-    mtspr   536, %r0
-    mtspr   538, %r0
-    mtspr   540, %r0
-    mtspr   542, %r0
-    isync
-    li      %r3, 0x52
-    mtspr   529, %r3                     /* IBAT0L: BRPN 0, WIMG 0010, PP 10 */
-    li      %r3, 0x1FFF
-    mtspr   528, %r3                     /* IBAT0U: BEPI 0, 256 MB, Vs Vp */
-    li      %r3, 0x52
-    mtspr   537, %r3                     /* DBAT0 = IBAT0 */
-    li      %r3, 0x1FFF
-    mtspr   536, %r3
-    LI32(%r3, 0x80000032)
-    mtspr   539, %r3                     /* DBAT1L: $80000000, WIMG 0110 */
-    LI32(%r3, 0x80001FFF)
-    mtspr   538, %r3
-    LI32(%r3, 0xA0000032)
-    mtspr   541, %r3                     /* DBAT2: $A0000000 */
-    LI32(%r3, 0xA0001FFF)
-    mtspr   540, %r3
-    LI32(%r3, 0xF0000032)
-    mtspr   543, %r3                     /* DBAT3: $F0000000, the Mac's own I/O */
-    LI32(%r3, 0xF0001FFF)
-    mtspr   542, %r3
-    isync
-    sync
-    blr
 
 /* The hand-off: the machine state IBM's big-endian entry stub leaves when it
  * enters the little-endian body (recorded on a PReP-mode run: registers,

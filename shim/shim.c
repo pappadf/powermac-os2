@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
 // os2shim -- boot OS/2 Warp (PowerPC Edition) from Open Firmware on an Apple
-// Network Server, without PReP firmware and without a lane-reversing bridge.
+// Network Server or a Power Macintosh 7500/8500/9500, without PReP firmware.
 //
 // IBM's boot image (the CD's PReP type-$41 partition) starts with a big-endian
 // stub that a PReP firmware enters with r3 = residual data.  The stub checks
@@ -13,12 +13,13 @@
 // On a Mac the CPU's little-endian mode is the only reversal there is (the
 // 60x munges addresses).  Software that only ever uses the CPU cannot tell
 // the two apart, so the shim does the stub's work itself, in the munged
-// little-endian world Open Firmware has already put the machine in:
+// little-endian world stage0 has put the machine in:
 //
-//   1. with Open Firmware still alive (client interface): find RAM, claim the
-//      work areas, read the boot partition off the CD at its load address,
-//      log to the console;
-//   2. leave Open Firmware: the stub's BATs (start.S);
+//   1. stage0 (stage0.c, big-endian, Open Firmware still alive): the RAM size,
+//      the stub's BATs, then little-endian mode for the CPU and the bridges,
+//      and into this file with no firmware left;
+//   2. the boot device and its partition, read with the shim's own SCSI
+//      driver at the load address, logged to the serial console;
 //   3. the residual data at $700000 -- big-endian fields, as IBM's big-endian
 //      firmware hands it over (the body converts it);
 //   4. the stub's memory effects: one big-endian store into its own image,
@@ -49,85 +50,11 @@
 #define BODY_REL     0x6A8u
 #define RESIDUAL_ADDR 0x00700000u
 
-uint32_t shim_cif; // the client interface handler, from r5 (start.S)
-void shim_take_mmu(void);
 void shim_handoff(uint32_t entry, uint32_t swapped, uint32_t residual, uint32_t residual_len) __attribute__((noreturn));
 
 uint8_t shim_stack[16384] __attribute__((aligned(16))); // start.S sets r1 to its end
 
 _Static_assert(sizeof(RESIDUAL) == 27148, "the PReP residual layout the loader reads");
-
-// --- Open Firmware client interface ------------------------------------------
-
-typedef int (*cif_fn)(void *);
-static int cif(const char *service, int nargs, int nrets, uint32_t *args, uint32_t *rets) {
-    uint32_t a[16];
-    a[0] = (uint32_t)service;
-    a[1] = (uint32_t)nargs;
-    a[2] = (uint32_t)nrets;
-    for (int i = 0; i < nargs; i++)
-        a[3 + i] = args[i];
-    for (int i = 0; i < nrets; i++)
-        a[3 + nargs + i] = 0;
-    int r = ((cif_fn)shim_cif)(a);
-    for (int i = 0; i < nrets; i++)
-        rets[i] = a[3 + nargs + i];
-    return r;
-}
-
-static size_t slen(const char *s) {
-    size_t n = 0;
-    while (s[n])
-        n++;
-    return n;
-}
-
-static uint32_t of_stdout;
-static void of_puts(const char *s) {
-    if (!of_stdout)
-        return;
-    uint32_t a[3] = {of_stdout, (uint32_t)s, (uint32_t)slen(s)}, r;
-    cif("write", 3, 1, a, &r);
-}
-
-static void of_puthex(uint32_t v) {
-    char b[11] = "0x";
-    for (int i = 0; i < 8; i++)
-        b[2 + i] = "0123456789ABCDEF"[(v >> (28 - 4 * i)) & 15];
-    b[10] = 0;
-    of_puts(b);
-}
-
-static uint32_t of_finddevice(const char *path) {
-    uint32_t a[1] = {(uint32_t)path}, r = 0;
-    return cif("finddevice", 1, 1, a, &r) ? 0xFFFFFFFFu : r;
-}
-
-// Property values are byte strings, and an integer in one is big-endian
-// (IEEE 1275 encode-int) whatever mode the firmware runs in; only the
-// client interface's argument array is native.
-static uint32_t prop_int(const uint32_t *p) {
-    return __builtin_bswap32(*p);
-}
-
-static int32_t of_getprop(uint32_t ph, const char *name, void *buf, uint32_t len) {
-    uint32_t a[4] = {ph, (uint32_t)name, (uint32_t)buf, len}, r = 0;
-    return cif("getprop", 4, 1, a, &r) ? -1 : (int32_t)r;
-}
-
-static uint32_t of_claim(uint32_t virt, uint32_t size) {
-    uint32_t a[3] = {virt, size, 0}, r = 0;
-    return cif("claim", 3, 1, a, &r) ? 0xFFFFFFFFu : r;
-}
-
-static void of_fail(const char *why) {
-    of_puts("os2shim: ");
-    of_puts(why);
-    of_puts("\r\n");
-    cif("exit", 0, 0, NULL, NULL);
-    for (;;)
-        ;
-}
 
 // --- after Open Firmware: the Network Server's own I/O (through BAT3) ----------
 
@@ -381,38 +308,16 @@ static void flush_range(uint32_t a, uint32_t n) {
 
 // --- main ----------------------------------------------------------------------
 
-void shim_main(void) __attribute__((noreturn));
-void shim_main(void) {
-    uint32_t chosen = of_finddevice("/chosen");
-    if (chosen != 0xFFFFFFFFu) {
-        uint32_t ih;
-        if (of_getprop(chosen, "stdout", &ih, 4) == 4)
-            of_stdout = prop_int(&ih);
-    }
-    of_puts("\r\nos2shim: OS/2 Warp (PowerPC Edition) from Open Firmware\r\n");
-
-    // RAM: /memory's reg, every (base, size) pair summed (the Network Server's
-    // POST re-bases its banks contiguously from 0).
-    uint32_t reg[32];
-    uint32_t ram = 0;
-    int32_t rl = of_getprop(of_finddevice("/memory"), "reg", reg, sizeof reg);
-    for (int i = 0; i + 1 < rl / 4; i += 2)
-        ram += prop_int(&reg[i + 1]);
+void shim_main(uint32_t ram, uint32_t magic) __attribute__((noreturn));
+void shim_main(uint32_t ram, uint32_t magic) {
+    // stage0 (the big-endian front end) asked Open Firmware for the RAM size,
+    // loaded the BATs, reversed Bandit's byte lanes and entered here in
+    // little-endian mode; nothing of the firmware's is used from here on.
+    if (magic != 0x4C453031u)
+        shim_fail("not entered by stage0");
     if (ram < (16u << 20))
-        of_fail("cannot size memory");
-    of_puts("os2shim: RAM ");
-    of_puthex(ram);
-    of_puts("\r\n");
-
-    // The work areas, virtual == physical.
-    if (of_claim(RESIDUAL_ADDR, 0x10000) != RESIDUAL_ADDR || of_claim(LOAD_ADDR, 0xC0000) != LOAD_ADDR)
-        of_fail("cannot claim $700000/$800000");
-    of_claim(0x000FF000u, 0x1000); // the stub's stack page (may already be Open Firmware's: harmless)
-    of_puts("os2shim: leaving Open Firmware\r\n");
-
-    // From here on nothing of Open Firmware's is used.
-    shim_take_mmu();
-    escc_puts("os2shim: out of Open Firmware\r\n");
+        shim_fail("cannot size memory");
+    escc_puts("os2shim: little-endian, out of Open Firmware\r\n");
 
     // The SCSI chip: a 53C825A where there is one (scsi_chip = its device),
     // as the loader will find it -- its registers through its memory BAR at
